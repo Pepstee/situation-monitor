@@ -1,0 +1,52 @@
+"""Core domain models for situation_monitor."""
+
+from __future__ import annotations
+
+import enum
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional
+
+
+class SourceReliability(enum.Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class Article:
+    url: str
+    title: str
+    source: str
+    body: str = ""
+    published_at: Optional[datetime] = None
+    reliability: SourceReliability = SourceReliability.UNKNOWN
+    tags: list[str] = field(default_factory=list)
+    relevance_score: Optional[float] = None
+    cluster_id: Optional[str] = None
+    source_lean: Optional[str] = None
+    source_reliability_label: Optional[str] = None
+    propaganda_flags: list[str] = field(default_factory=list)
+    polymarket_odds: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not self.url:
+            raise ValueError("Article.url must not be empty")
+        if not self.title:
+            raise ValueError("Article.title must not be empty")
+        if not self.source:
+            raise ValueError("Article.source must not be empty")
+
+
+@dataclass
+class DigestEntry:
+    articles: list[Article]
+    summary: str
+    generated_at: datetime = field(default_factory=datetime.utcnow)
+    topic: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.articles, list):
+            raise TypeError("DigestEntry.articles must be a list")
