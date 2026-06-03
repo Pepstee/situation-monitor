@@ -1,0 +1,14 @@
+[
+  {
+    "id": "crypto-btc-100k",
+    "question": "Will Bitcoin reach $100,000 by end of 2025?",
+    "keywords": ["bitcoin", "btc", "crypto", "cryptocurrency"],
+    "odds": 0.42
+  },
+  {
+    "id": "ai-agi-2026",
+    "question": "Will AGI be achieved before 2027?",
+    "keywords": ["AGI", "artificial general intelligence", "OpenAI", "DeepMind", "superintelligence"],
+    "odds": 0.08
+  }
+]
