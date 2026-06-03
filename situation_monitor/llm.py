@@ -21,6 +21,13 @@ def get_llm_client(
     if _override is not None:
         return _override
 
+    if config.llm_backend == "stub":
+
+        def _stub(_prompt: str) -> str:
+            return '{"score": 0.5}'
+
+        return _stub
+
     if config.llm_backend == "ollama":
 
         def _ollama(prompt: str) -> str:
