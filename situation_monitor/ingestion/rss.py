@@ -1,0 +1,47 @@
+"""RSS 2.0 fetcher using the stdlib XML parser."""
+
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+
+from situation_monitor.ingestion.base import Fetcher, HttpClient
+from situation_monitor.models import Article, SourceReliability
+
+
+class RSSFetcher(Fetcher):
+    def __init__(self, client: HttpClient | None = None) -> None:
+        super().__init__(client)
+
+    def fetch(self, url: str) -> list[Article]:
+        raw = self._client.get(url)
+        root = ET.fromstring(raw)
+        channel = root.find("channel")
+        if channel is None:
+            return []
+        source_name = (channel.findtext("title") or url).strip()
+        articles: list[Article] = []
+        for item in channel.findall("item"):
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            if not title or not link:
+                continue
+            description = (item.findtext("description") or "").strip()
+            published_at = None
+            if pub_date := item.findtext("pubDate"):
+                try:
+                    published_at = parsedate_to_datetime(pub_date.strip())
+                except Exception:
+                    pass
+            articles.append(
+                Article(
+                    url=link,
+                    title=title,
+                    source=source_name,
+                    body=description,
+                    published_at=published_at,
+                    reliability=SourceReliability.MEDIUM,
+                    tags=["rss"],
+                )
+            )
+        return articles
