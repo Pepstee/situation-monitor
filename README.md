@@ -51,7 +51,7 @@ Configuration is layered: defaults → JSON file (`--config PATH`) → environme
 | `polymarket_markets` | `SM_POLYMARKET_MARKETS` | `[]` | Path(s) to JSON market definition file(s) |
 | `alert_threshold` | `SM_ALERT_THRESHOLD` | `0.8` | Relevance threshold for alerts |
 | `digest_output_dir` | `SM_DIGEST_DIR` | `digests` | Directory for saved digests |
-| `state_file` | `SM_STATE_FILE` | `null` | Path to optional state file |
+| `state_file` | `SM_STATE_FILE` | `state/reliability.json` | Reliability tracker state path (persists per-source fetch counts across runs) |
 
 ### JSON config file
 
@@ -66,19 +66,35 @@ Configuration is layered: defaults → JSON file (`--config PATH`) → environme
 
 Pass it with `--config path/to/config.json`. Any field not present falls back to defaults and then env vars.
 
+## Sources
+
+The `sources` config field (or `SM_SOURCES` env var) accepts a comma-separated list of URLs or local file paths. Each entry is routed to the appropriate fetcher:
+
+| Scheme / pattern | Fetcher | Notes |
+|---|---|---|
+| `hn://` | `HNFetcher` | Hacker News front page via Algolia API |
+| `github_trending://` | `GitHubTrendingFetcher` | GitHub trending repositories |
+| URL containing `coindesk` or `cointelegraph` | `CryptoRSSFetcher` | Crypto RSS feeds |
+| Any other URL or local `.xml` path | `RSSFetcher` | Standard RSS 2.0 |
+
 ## Architecture
 
 ```
-sources (RSS/XML) → RSSFetcher → Article list
-                                    ↓
-                             bias.py  (lean, reliability)
-                             propaganda.py (LLM flags)
-                             polymarket.py (odds match)
-                             cluster assignment
-                                    ↓
-                      once → Markdown stdout
-                      serve → Flask dashboard (auto-refresh 60 s)
-                      run → loop once every poll_interval_seconds
+sources (RSS / hn:// / github_trending:// / crypto)
+          ↓ per-source fetcher
+        raw articles
+          ↓
+        dedup.py  (exact URL dedup + near-title dedup)
+        reliability.py  (per-source fetch counts → state_file)
+          ↓
+        bias.py  (lean, curated reliability label)
+        propaganda.py  (LLM flags — best-effort)
+        polymarket.py  (odds match)
+        cluster assignment
+          ↓
+        once → Markdown stdout
+        serve → Flask dashboard (auto-refresh 60 s)
+        run → loop once every poll_interval_seconds
 ```
 
 LLM calls (`propaganda.py`) go through the injectable `get_llm_client(config)` factory in `llm.py`. Pass `_override=callable` in tests to avoid real LLM calls.

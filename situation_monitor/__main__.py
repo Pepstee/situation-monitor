@@ -18,6 +18,7 @@ from pathlib import Path
 from situation_monitor.bias import get_source_lean, get_source_reliability
 from situation_monitor.config import Config
 from situation_monitor.dashboard import make_app
+from situation_monitor.dedup import deduplicate
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
 from situation_monitor.ingestion.github_trending import GitHubTrendingFetcher
 from situation_monitor.ingestion.hn import HNFetcher
@@ -26,6 +27,7 @@ from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article
 from situation_monitor.polymarket import PolymarketMatcher
 from situation_monitor.propaganda import flag_article
+from situation_monitor.reliability import ReliabilityTracker
 
 
 # ---------------------------------------------------------------------------
@@ -82,10 +84,23 @@ def _is_url(source: str) -> bool:
     return source.startswith("http://") or source.startswith("https://")
 
 
+_HN_DEFAULT_URL = "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30"
+_GITHUB_TRENDING_DEFAULT_URL = "https://github.com/trending"
+
+
+def _resolve_source(source: str) -> str:
+    """Map shorthand scheme URIs to real fetch URLs."""
+    if source == "hn://":
+        return _HN_DEFAULT_URL
+    if source == "github_trending://":
+        return _GITHUB_TRENDING_DEFAULT_URL
+    return source
+
+
 def _select_fetcher(source: str, client=None):
-    if "hn.algolia.com" in source:
+    if "hn.algolia.com" in source or source.startswith("hn://"):
         return HNFetcher(client=client)
-    if "github.com/trending" in source:
+    if "github.com/trending" in source or source.startswith("github_trending://"):
         return GitHubTrendingFetcher(client=client)
     if "coindesk" in source or "cointelegraph" in source:
         return CryptoRSSFetcher(client=client)
@@ -117,20 +132,39 @@ def _load_polymarket_markets(config: Config) -> list[dict]:
 
 def _ingest_and_enrich(config: Config) -> list[Article]:
     articles: list[Article] = []
+    tracker = ReliabilityTracker()
+    state_path = config.state_file or "state/reliability.json"
+    tracker.load(state_path)
 
     for source in config.sources:
         try:
-            client = None if _is_url(source) else _LocalFileClient()
-            fetcher = _select_fetcher(source, client)
-            articles.extend(fetcher.fetch(source))
+            resolved = _resolve_source(source)
+            client = None if _is_url(resolved) else _LocalFileClient()
+            fetcher = _select_fetcher(resolved, client)
+            fetched = fetcher.fetch(resolved)
+            tracker.record_fetch(source, len(fetched))
+            articles.extend(fetched)
         except Exception as exc:
             print(f"Warning: failed to fetch {source!r}: {exc}", file=sys.stderr)
+
+    articles = deduplicate(articles)
 
     # Bias scoring
     for article in articles:
         article.source_lean = get_source_lean(article.source)
         article.source_reliability_label = get_source_reliability(article.source)
         article.relevance_score = 1.0
+
+    # Override reliability label with tracker data when available
+    for article in articles:
+        tracked = tracker.get_tracked_reliability(article.source)
+        if tracked is not None:
+            article.source_reliability_label = tracked
+
+    try:
+        tracker.save(state_path)
+    except Exception as exc:
+        print(f"Warning: failed to save reliability state: {exc}", file=sys.stderr)
 
     # Simple keyword-based clustering (no LLM required)
     _assign_clusters(articles)
