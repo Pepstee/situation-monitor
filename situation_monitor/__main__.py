@@ -18,6 +18,9 @@ from pathlib import Path
 from situation_monitor.bias import get_source_lean, get_source_reliability
 from situation_monitor.config import Config
 from situation_monitor.dashboard import make_app
+from situation_monitor.ingestion.crypto import CryptoRSSFetcher
+from situation_monitor.ingestion.github_trending import GitHubTrendingFetcher
+from situation_monitor.ingestion.hn import HNFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article
@@ -79,6 +82,16 @@ def _is_url(source: str) -> bool:
     return source.startswith("http://") or source.startswith("https://")
 
 
+def _select_fetcher(source: str, client=None):
+    if "hn.algolia.com" in source:
+        return HNFetcher(client=client)
+    if "github.com/trending" in source:
+        return GitHubTrendingFetcher(client=client)
+    if "coindesk" in source or "cointelegraph" in source:
+        return CryptoRSSFetcher(client=client)
+    return RSSFetcher(client=client)
+
+
 # ---------------------------------------------------------------------------
 # Polymarket markets loader
 # ---------------------------------------------------------------------------
@@ -108,7 +121,7 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
     for source in config.sources:
         try:
             client = None if _is_url(source) else _LocalFileClient()
-            fetcher = RSSFetcher(client=client)
+            fetcher = _select_fetcher(source, client)
             articles.extend(fetcher.fetch(source))
         except Exception as exc:
             print(f"Warning: failed to fetch {source!r}: {exc}", file=sys.stderr)
@@ -227,8 +240,15 @@ def _cmd_run(config: Config) -> None:
 # ---------------------------------------------------------------------------
 
 
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="edge", description="Situation Monitor")
+    parser = _ArgumentParser(prog="situation_monitor", description="Situation Monitor")
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument(
         "--config",
@@ -240,8 +260,15 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("once", parents=[shared], help="Ingest, enrich, print Markdown digest, then exit")
     sub.add_parser("serve", parents=[shared], help="Start web dashboard")
     sub.add_parser("run", parents=[shared], help="Loop 'once' every poll_interval_seconds")
+    sub.add_parser("show-config", parents=[shared], help="Print the resolved Config and exit")
 
     args = parser.parse_args(argv)
+
+    if args.cmd == "show-config":
+        config = _load_config(getattr(args, "config", None))
+        print(repr(config))
+        return
+
     config = _load_config(args.config)
 
     if args.cmd == "once":
