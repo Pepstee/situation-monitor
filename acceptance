@@ -1,0 +1,1 @@
+SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor once --config /dev/null 2>/dev/null

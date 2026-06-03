@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <link>http://example.com</link>
+    <description>Test RSS feed for acceptance tests</description>
+    <item>
+      <title>Bitcoin Surges Past Key Resistance Level</title>
+      <link>http://example.com/bitcoin-surge</link>
+      <description>Bitcoin and cryptocurrency markets saw significant movement today as BTC broke through resistance.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>AI Research Breakthrough Reported by DeepMind</title>
+      <link>http://example.com/ai-breakthrough</link>
+      <description>Artificial general intelligence research advances as DeepMind publishes new findings on superintelligence.</description>
+      <pubDate>Tue, 02 Jan 2024 09:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
