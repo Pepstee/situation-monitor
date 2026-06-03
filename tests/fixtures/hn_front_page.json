@@ -1,0 +1,31 @@
+{
+  "hits": [
+    {
+      "title": "Show HN: I built a real-time air quality monitor",
+      "url": "https://example.com/air-quality",
+      "objectID": "38000001",
+      "created_at": "2024-01-15T10:30:00Z",
+      "story_text": "I spent the last six months building an air quality monitor."
+    },
+    {
+      "title": "Ask HN: What is your favourite terminal emulator?",
+      "url": "https://example.com/terminal-discussion",
+      "objectID": "38000002",
+      "created_at": "2024-01-15T09:00:00Z",
+      "story_text": null
+    },
+    {
+      "title": "",
+      "url": "https://example.com/no-title",
+      "objectID": "38000003",
+      "created_at": "2024-01-15T08:00:00Z",
+      "story_text": null
+    },
+    {
+      "title": "Discussion without external URL",
+      "objectID": "38000004",
+      "created_at": "2024-01-15T07:00:00Z",
+      "story_text": "This is a text-only HN post with no external link."
+    }
+  ]
+}
