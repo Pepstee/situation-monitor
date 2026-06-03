@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CoinDesk RSS Feed</title>
+    <link>https://www.coindesk.com</link>
+    <description>Latest cryptocurrency news</description>
+    <item>
+      <title>Bitcoin Surges Past $60,000</title>
+      <link>https://www.coindesk.com/bitcoin-surges-60k</link>
+      <description>Bitcoin has surged past the $60,000 mark for the first time in months.</description>
+      <pubDate>Tue, 03 Jun 2026 10:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Ethereum 2.0 Upgrade Details Revealed</title>
+      <link>https://www.coindesk.com/ethereum-2-upgrade</link>
+      <description>The Ethereum foundation has revealed details about the upcoming network upgrade.</description>
+      <pubDate>Mon, 02 Jun 2026 09:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>DeFi Total Value Locked Hits Record High</title>
+      <link>https://www.coindesk.com/defi-tvl-record</link>
+      <description>Total value locked in DeFi protocols has reached a new record high this week.</description>
+    </item>
+  </channel>
+</rss>
