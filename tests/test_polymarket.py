@@ -1,16 +1,18 @@
-"""Tests for PolymarketMatcher using the bundled markets fixture — zero network calls."""
+"""Tests for PolymarketMatcher and PolymarketClient — zero network calls."""
 
 from __future__ import annotations
 
 import json
 import pathlib
+from unittest.mock import MagicMock
 
 import pytest
 
 from situation_monitor.models import Article
-from situation_monitor.polymarket import PolymarketMatcher
+from situation_monitor.polymarket import PolymarketClient, PolymarketMatcher
 
 FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "polymarket_markets.json"
+API_FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "polymarket" / "markets.json"
 
 
 def _load_markets() -> list[dict]:
@@ -141,3 +143,139 @@ class TestPolymarketMatcherFirstMarketWins:
         ]
         result = matcher.match(_article(title="Bitcoin soars"), markets)
         assert result == pytest.approx(0.3)
+
+
+# ---------------------------------------------------------------------------
+# PolymarketClient tests — injectable session, zero real network calls
+# ---------------------------------------------------------------------------
+
+
+def _api_markets() -> list[dict]:
+    return json.loads(API_FIXTURE_PATH.read_text())
+
+
+def _mock_session(markets: list[dict]):
+    """Return a mock session whose .get().json() returns *markets*."""
+    resp = MagicMock()
+    resp.json.return_value = markets
+    session = MagicMock()
+    session.get.return_value = resp
+    return session
+
+
+class TestApiFixtureContent:
+    def test_fixture_has_two_markets(self) -> None:
+        assert len(_api_markets()) == 2
+
+    def test_all_markets_have_slug(self) -> None:
+        for m in _api_markets():
+            assert isinstance(m.get("slug"), str) and m["slug"]
+
+    def test_all_markets_have_outcome_prices(self) -> None:
+        for m in _api_markets():
+            prices = m.get("outcomePrices", [])
+            assert len(prices) == 2
+            assert all(isinstance(p, str) for p in prices)
+
+    def test_bitcoin_market_present(self) -> None:
+        slugs = {m["slug"] for m in _api_markets()}
+        assert any("bitcoin" in s for s in slugs)
+
+    def test_agi_market_present(self) -> None:
+        slugs = {m["slug"] for m in _api_markets()}
+        assert any("agi" in s for s in slugs)
+
+
+class TestPolymarketClientFetchMarkets:
+    def test_fetch_markets_calls_api_per_slug(self) -> None:
+        markets = _api_markets()
+        session = _mock_session(markets)
+        client = PolymarketClient(slugs=["will-bitcoin-hit-100k-2025"], session=session)
+        result = client.fetch_markets()
+        session.get.assert_called_once()
+        assert result == [markets[0]]
+
+    def test_fetch_markets_skips_empty_responses(self) -> None:
+        resp = MagicMock()
+        resp.json.return_value = []
+        session = MagicMock()
+        session.get.return_value = resp
+        client = PolymarketClient(slugs=["nonexistent-slug"], session=session)
+        assert client.fetch_markets() == []
+
+    def test_fetch_markets_handles_exception_gracefully(self) -> None:
+        session = MagicMock()
+        session.get.side_effect = RuntimeError("network error")
+        client = PolymarketClient(slugs=["some-slug"], session=session)
+        assert client.fetch_markets() == []
+
+    def test_fetch_markets_collects_multiple_slugs(self) -> None:
+        markets = _api_markets()
+        # First call returns bitcoin market, second returns agi market
+        resp0, resp1 = MagicMock(), MagicMock()
+        resp0.json.return_value = [markets[0]]
+        resp1.json.return_value = [markets[1]]
+        session = MagicMock()
+        session.get.side_effect = [resp0, resp1]
+        client = PolymarketClient(
+            slugs=["will-bitcoin-hit-100k-2025", "will-deepmind-achieve-agi-before-2027"],
+            session=session,
+        )
+        result = client.fetch_markets()
+        assert len(result) == 2
+        assert session.get.call_count == 2
+
+
+class TestPolymarketClientMatch:
+    def test_bitcoin_article_matches_bitcoin_market(self) -> None:
+        client = PolymarketClient(slugs=[])
+        article = _article(title="Bitcoin Surges Past Key Resistance Level")
+        result = client.match(article, _api_markets())
+        assert result == pytest.approx(0.42)
+
+    def test_deepmind_article_matches_agi_market(self) -> None:
+        client = PolymarketClient(slugs=[])
+        article = _article(
+            title="AI Research Breakthrough Reported by DeepMind",
+            body="Artificial general intelligence research advances.",
+        )
+        result = client.match(article, _api_markets())
+        assert result == pytest.approx(0.08)
+
+    def test_unrelated_article_returns_none(self) -> None:
+        client = PolymarketClient(slugs=[])
+        article = _article(title="Local weather forecast for the weekend")
+        assert client.match(article, _api_markets()) is None
+
+    def test_empty_markets_returns_none(self) -> None:
+        client = PolymarketClient(slugs=[])
+        article = _article(title="Bitcoin rally")
+        assert client.match(article, []) is None
+
+    def test_first_matching_market_wins(self) -> None:
+        markets = [
+            {"slug": "bitcoin-up", "question": "Bitcoin up?", "outcomePrices": ["0.9", "0.1"]},
+            {"slug": "bitcoin-down", "question": "Bitcoin down?", "outcomePrices": ["0.1", "0.9"]},
+        ]
+        client = PolymarketClient(slugs=[])
+        result = client.match(_article(title="Bitcoin moves"), markets)
+        assert result == pytest.approx(0.9)
+
+    def test_match_is_case_insensitive(self) -> None:
+        client = PolymarketClient(slugs=[])
+        article = _article(title="BITCOIN PRICE DROPS")
+        result = client.match(article, _api_markets())
+        assert result == pytest.approx(0.42)
+
+    def test_match_result_is_float(self) -> None:
+        client = PolymarketClient(slugs=[])
+        article = _article(title="Bitcoin hits record high")
+        result = client.match(article, _api_markets())
+        assert isinstance(result, float)
+
+    def test_implied_odds_come_from_outcome_prices_first_element(self) -> None:
+        markets = [{"slug": "test-market", "question": "Test?", "outcomePrices": ["0.73", "0.27"]}]
+        client = PolymarketClient(slugs=[])
+        article = _article(title="test market news today")
+        result = client.match(article, markets)
+        assert result == pytest.approx(0.73)

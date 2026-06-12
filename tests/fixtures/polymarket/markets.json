@@ -1,0 +1,14 @@
+[
+  {
+    "slug": "will-bitcoin-hit-100k-2025",
+    "question": "Will Bitcoin hit $100,000 by end of 2025?",
+    "outcomes": ["Yes", "No"],
+    "outcomePrices": ["0.42", "0.58"]
+  },
+  {
+    "slug": "will-deepmind-achieve-agi-before-2027",
+    "question": "Will DeepMind achieve AGI before 2027?",
+    "outcomes": ["Yes", "No"],
+    "outcomePrices": ["0.08", "0.92"]
+  }
+]

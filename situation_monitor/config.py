@@ -24,6 +24,7 @@ class Config:
     ollama_model: str = "llama3"
     ollama_url: str = "http://localhost:11434"
     polymarket_markets: list = field(default_factory=list)
+    polymarket_slugs: list[str] = field(default_factory=list)
     dashboard_port: int = 8080
     topics: list[str] = field(default_factory=list)
 
@@ -79,4 +80,6 @@ class Config:
             kwargs["dashboard_port"] = int(v)
         if (v := os.environ.get("SM_POLYMARKET_MARKETS")):
             kwargs["polymarket_markets"] = [s.strip() for s in v.split(",") if s.strip()]
+        if (v := os.environ.get("SM_POLYMARKET_SLUGS")):
+            kwargs["polymarket_slugs"] = [s.strip() for s in v.split(",") if s.strip()]
         return cls(**kwargs)
