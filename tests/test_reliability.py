@@ -7,7 +7,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from situation_monitor.reliability import ReliabilityTracker
 

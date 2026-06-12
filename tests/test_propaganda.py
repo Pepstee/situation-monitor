@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-import pytest
 
 from situation_monitor.models import Article
 from situation_monitor.propaganda import enrich_article, flag_article

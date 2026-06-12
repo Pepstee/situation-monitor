@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from situation_monitor.dedup import deduplicate, _normalise
 from situation_monitor.models import Article

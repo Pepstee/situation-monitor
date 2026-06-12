@@ -5,10 +5,9 @@ metadata, and presence of the auto-refresh meta tag.  No network calls.
 """
 from __future__ import annotations
 
-import pytest
 
 from situation_monitor.dashboard import make_app
-from situation_monitor.models import Article, SourceReliability
+from situation_monitor.models import Article
 
 
 # ---------------------------------------------------------------------------

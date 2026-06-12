@@ -9,7 +9,6 @@ from __future__ import annotations
 import io
 from typing import Optional
 
-import pytest
 
 from situation_monitor.alerting import check_and_emit_alerts
 from situation_monitor.models import Article
