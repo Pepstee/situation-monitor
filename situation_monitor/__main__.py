@@ -25,8 +25,10 @@ from situation_monitor.ingestion.hn import HNFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article
+from situation_monitor.alerting import check_and_emit_alerts
 from situation_monitor.polymarket import PolymarketMatcher
 from situation_monitor.propaganda import flag_article
+from situation_monitor.relevance import score_relevance
 from situation_monitor.reliability import ReliabilityTracker
 
 
@@ -149,11 +151,13 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
 
     articles = deduplicate(articles)
 
-    # Bias scoring
+    llm = get_llm_client(config)
+
+    # Bias scoring + relevance
     for article in articles:
         article.source_lean = get_source_lean(article.source)
         article.source_reliability_label = get_source_reliability(article.source)
-        article.relevance_score = 1.0
+        article.relevance_score = score_relevance(article, config.topics, llm)
 
     # Override reliability label with tracker data when available
     for article in articles:
@@ -177,7 +181,6 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
 
     # Propaganda detection (best-effort; failures silently yield empty flags)
     try:
-        llm = get_llm_client(config)
         for article in articles:
             article.propaganda_flags = flag_article(article, llm)
     except Exception as exc:
@@ -243,6 +246,7 @@ def _print_markdown(articles: list[Article]) -> None:
 
 def _cmd_once(config: Config) -> None:
     articles = _ingest_and_enrich(config)
+    check_and_emit_alerts(articles, config.alert_threshold)
     _print_markdown(articles)
 
 
