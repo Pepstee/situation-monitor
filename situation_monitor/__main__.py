@@ -27,7 +27,7 @@ from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article
 from situation_monitor.alerting import check_and_emit_alerts
 from situation_monitor.polymarket import PolymarketMatcher
-from situation_monitor.propaganda import flag_article
+from situation_monitor.propaganda import enrich_article
 from situation_monitor.relevance import score_relevance
 from situation_monitor.reliability import ReliabilityTracker
 
@@ -157,6 +157,7 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
     for article in articles:
         article.source_lean = get_source_lean(article.source)
         article.source_reliability_label = get_source_reliability(article.source)
+        article.reliability_tier = get_source_reliability(article.source)
         article.relevance_score = score_relevance(article, config.topics, llm)
 
     # Override reliability label with tracker data when available
@@ -179,10 +180,10 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
     for article in articles:
         article.polymarket_odds = matcher.match(article, markets)
 
-    # Propaganda detection (best-effort; failures silently yield empty flags)
+    # Propaganda detection (best-effort; failures silently leave fields at defaults)
     try:
         for article in articles:
-            article.propaganda_flags = flag_article(article, llm)
+            enrich_article(article, llm)
     except Exception as exc:
         print(f"Warning: propaganda detection skipped: {exc}", file=sys.stderr)
 
@@ -224,6 +225,7 @@ def _print_markdown(articles: list[Article]) -> None:
         return
     for art in articles:
         lean = art.source_lean or "—"
+        rel_tier = art.reliability_tier or "—"
         rel = art.source_reliability_label or art.reliability.value
         relevance = f"{art.relevance_score:.2f}" if art.relevance_score is not None else "—"
         cluster = art.cluster_id or "—"
@@ -232,10 +234,13 @@ def _print_markdown(articles: list[Article]) -> None:
         print(f"## {art.title}")
         print(f"<{art.url}>")
         print(
-            f"Source: {art.source} | Lean: {lean} | Reliability: {rel} | "
-            f"Relevance: {relevance} | Cluster: {cluster}"
+            f"Source: {art.source} | Lean: {lean} | Reliability tier: {rel_tier} | "
+            f"Reliability: {rel} | Relevance: {relevance} | Cluster: {cluster}"
         )
-        print(f"Propaganda: {flags} | Polymarket: {odds}")
+        print(
+            f"Propaganda: {flags} | Loaded language: {art.loaded_language} | "
+            f"Propaganda flag: {art.propaganda_flag} | Polymarket: {odds}"
+        )
         print()
 
 
