@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
+from typing import IO, Optional, Union
 
 from situation_monitor.models import Article
 
@@ -11,16 +11,16 @@ from situation_monitor.models import Article
 def check_and_emit_alerts(
     articles: list[Article],
     threshold: float,
-    output_file: Optional[str] = None,
+    output_file: Optional[Union[str, IO[str]]] = None,
 ) -> list[Article]:
-    """Emit alerts for articles whose relevance_score exceeds *threshold*.
+    """Emit alerts for articles whose relevance_score meets or exceeds *threshold*.
 
     Alerts are printed to stdout unless *output_file* is set, in which case
     they are appended to that file.  Returns the list of alerted articles.
     """
     alerted: list[Article] = [
         a for a in articles
-        if a.relevance_score is not None and a.relevance_score > threshold
+        if a.relevance_score is not None and a.relevance_score >= threshold
     ]
 
     lines = [
@@ -31,9 +31,12 @@ def check_and_emit_alerts(
     if not lines:
         return alerted
 
-    if output_file:
-        with open(output_file, "a", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
+    if output_file is not None:
+        if hasattr(output_file, "write"):
+            output_file.write("\n".join(lines) + "\n")
+        else:
+            with open(output_file, "a", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
     else:
         for line in lines:
             print(line, file=sys.stdout)
