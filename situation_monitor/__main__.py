@@ -26,7 +26,7 @@ from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article
 from situation_monitor.alerting import check_and_emit_alerts
-from situation_monitor.polymarket import PolymarketMatcher
+from situation_monitor.polymarket import PolymarketClient, PolymarketMatcher
 from situation_monitor.propaganda import enrich_article
 from situation_monitor.relevance import score_relevance
 from situation_monitor.reliability import ReliabilityTracker
@@ -70,6 +70,8 @@ def _apply_env(config: Config) -> None:
         config.log_level = v
     if v := os.environ.get("SM_POLYMARKET_MARKETS"):
         config.polymarket_markets = [s.strip() for s in v.split(",") if s.strip()]
+    if v := os.environ.get("SM_POLYMARKET_SLUGS"):
+        config.polymarket_slugs = [s.strip() for s in v.split(",") if s.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -174,11 +176,24 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
     # Simple keyword-based clustering (no LLM required)
     _assign_clusters(articles)
 
-    # Polymarket matching
-    markets = _load_polymarket_markets(config)
-    matcher = PolymarketMatcher()
-    for article in articles:
-        article.polymarket_odds = matcher.match(article, markets)
+    # Polymarket matching: live API (slugs) → file-based API format → legacy keyword format
+    if config.polymarket_slugs:
+        _pm = PolymarketClient(slugs=config.polymarket_slugs)
+        _pm_markets = _pm.fetch_markets()
+        for article in articles:
+            article.polymarket_odds = _pm.match(article, _pm_markets)
+    else:
+        _file_markets = _load_polymarket_markets(config)
+        _api_markets = [m for m in _file_markets if "outcomePrices" in m]
+        _legacy_markets = [m for m in _file_markets if "odds" in m]
+        if _api_markets:
+            _pm_client = PolymarketClient(slugs=[])
+            for article in articles:
+                article.polymarket_odds = _pm_client.match(article, _api_markets)
+        elif _legacy_markets:
+            _matcher = PolymarketMatcher()
+            for article in articles:
+                article.polymarket_odds = _matcher.match(article, _legacy_markets)
 
     # Propaganda detection (best-effort; failures silently leave fields at defaults)
     try:
