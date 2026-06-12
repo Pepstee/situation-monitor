@@ -1,4 +1,4 @@
-"""Tests for situation_monitor.propaganda.flag_article — zero real LLM calls."""
+"""Tests for situation_monitor.propaganda — zero real LLM calls."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from situation_monitor.models import Article
-from situation_monitor.propaganda import flag_article
+from situation_monitor.propaganda import enrich_article, flag_article
 
 
 def _article(
@@ -127,3 +127,55 @@ class TestFlagArticleBodyTruncation:
         client = _client_returning(json.dumps({"flags": []}))
         result = flag_article(_article(body=""), client)
         assert result == []
+
+
+class TestEnrichArticle:
+    def test_sets_flags_loaded_language_and_propaganda_flag(self) -> None:
+        payload = json.dumps({
+            "flags": ["loaded_language", "appeal_to_fear"],
+            "loaded_language": True,
+            "propaganda_flag": True,
+        })
+        art = _article()
+        enrich_article(art, _client_returning(payload))
+        assert art.propaganda_flags == ["loaded_language", "appeal_to_fear"]
+        assert art.loaded_language is True
+        assert art.propaganda_flag is True
+
+    def test_clean_article_sets_all_false(self) -> None:
+        payload = json.dumps({"flags": [], "loaded_language": False, "propaganda_flag": False})
+        art = _article()
+        enrich_article(art, _client_returning(payload))
+        assert art.propaganda_flags == []
+        assert art.loaded_language is False
+        assert art.propaganda_flag is False
+
+    def test_malformed_response_leaves_defaults(self) -> None:
+        art = _article()
+        enrich_article(art, _client_returning("not json {{{"))
+        assert art.propaganda_flags == []
+        assert art.loaded_language is False
+        assert art.propaganda_flag is False
+
+    def test_client_exception_leaves_defaults(self) -> None:
+        art = _article()
+        enrich_article(art, MagicMock(side_effect=RuntimeError("down")))
+        assert art.loaded_language is False
+        assert art.propaganda_flag is False
+
+    def test_prompt_contains_title_and_body(self) -> None:
+        payload = json.dumps({"flags": [], "loaded_language": False, "propaganda_flag": False})
+        client = _client_returning(payload)
+        art = _article(title="Sentinel Title XYZ", body="Sentinel body content ABC")
+        enrich_article(art, client)
+        prompt = client.call_args[0][0]
+        assert "Sentinel Title XYZ" in prompt
+        assert "Sentinel body content ABC" in prompt
+
+    def test_missing_booleans_default_to_false(self) -> None:
+        payload = json.dumps({"flags": ["bandwagon"]})
+        art = _article()
+        enrich_article(art, _client_returning(payload))
+        assert art.propaganda_flags == ["bandwagon"]
+        assert art.loaded_language is False
+        assert art.propaganda_flag is False

@@ -11,21 +11,21 @@ class TestCuratedBiasDataset:
     def test_has_at_least_20_entries(self) -> None:
         assert len(CURATED_BIAS) >= 20
 
-    def test_every_entry_has_lean_and_reliability(self) -> None:
+    def test_every_entry_has_lean_and_reliability_tier(self) -> None:
         for key, entry in CURATED_BIAS.items():
             assert "lean" in entry, f"Missing 'lean' for {key}"
-            assert "reliability" in entry, f"Missing 'reliability' for {key}"
+            assert "reliability_tier" in entry, f"Missing 'reliability_tier' for {key}"
 
     def test_lean_values_are_from_known_set(self) -> None:
         valid_leans = {"left", "right", "center", "left-center", "right-center"}
         for key, entry in CURATED_BIAS.items():
             assert entry["lean"] in valid_leans, f"Unexpected lean for {key}: {entry['lean']!r}"
 
-    def test_reliability_values_are_from_known_set(self) -> None:
+    def test_reliability_tier_values_are_from_known_set(self) -> None:
         valid = {"high", "medium", "low", "mixed"}
         for key, entry in CURATED_BIAS.items():
-            assert entry["reliability"] in valid, (
-                f"Unexpected reliability for {key}: {entry['reliability']!r}"
+            assert entry["reliability_tier"] in valid, (
+                f"Unexpected reliability_tier for {key}: {entry['reliability_tier']!r}"
             )
 
 

@@ -28,7 +28,10 @@ class Article:
     cluster_id: Optional[str] = None
     source_lean: Optional[str] = None
     source_reliability_label: Optional[str] = None
+    reliability_tier: Optional[str] = None
     propaganda_flags: list[str] = field(default_factory=list)
+    loaded_language: bool = False
+    propaganda_flag: bool = False
     polymarket_odds: Optional[float] = None
 
     def __post_init__(self) -> None:
