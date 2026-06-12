@@ -83,5 +83,5 @@ def test_acceptance_script_stdout_contains_article():
     """Stdout should contain at least one article heading (## Title)."""
     result = _run_acceptance()
     lines = result.stdout.decode(errors="replace").splitlines()
-    article_headings = [l for l in lines if l.startswith("## ")]
+    article_headings = [line for line in lines if line.startswith("## ")]
     assert article_headings, "No article headings (## ...) found in acceptance stdout"

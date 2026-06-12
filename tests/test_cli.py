@@ -15,12 +15,11 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+from situation_monitor.__main__ import main
+
 
 PROJECT_ROOT = Path(__file__).parent.parent
 FIXTURE_RSS = PROJECT_ROOT / "tests" / "fixtures" / "rss_sample.xml"
-
-# Import main once; patching operates on the module namespace, not the reference.
-from situation_monitor.__main__ import main
 
 
 # ---------------------------------------------------------------------------
