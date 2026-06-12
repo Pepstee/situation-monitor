@@ -13,7 +13,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"

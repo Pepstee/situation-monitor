@@ -15,7 +15,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 FIXTURE_RSS = PROJECT_ROOT / "tests" / "fixtures" / "rss_sample.xml"

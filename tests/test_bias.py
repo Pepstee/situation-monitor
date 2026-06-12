@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from situation_monitor.bias import CURATED_BIAS, get_source_lean, get_source_reliability
 

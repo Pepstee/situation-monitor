@@ -6,7 +6,6 @@ All LLM calls use injected stub callables — zero real network or LLM calls.
 from __future__ import annotations
 
 import json
-import pytest
 
 from situation_monitor.models import Article
 from situation_monitor.relevance import score_relevance

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pathlib
 
-import pytest
 
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
 from situation_monitor.models import Article, SourceReliability
