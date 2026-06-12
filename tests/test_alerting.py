@@ -151,11 +151,10 @@ class TestThresholdBoundary:
         assert article in alerted
 
     def test_threshold_zero_does_not_fire_for_zero_score(self, capsys) -> None:
-        # 0.0 is not > 0.0; spec says >= would fire, but code uses > so this passes
+        # spec requires >=; score=0.0 at threshold=0.0 satisfies 0.0 >= 0.0, so alert fires
         article = _article(score=0.0)
         alerted = check_and_emit_alerts([article], threshold=0.0)
-        # Under the current implementation (>) this returns empty:
-        assert alerted == [], "score=0.0 should NOT fire with threshold=0.0 under strict > rule"
+        assert article in alerted, "score=0.0 must fire when threshold=0.0 (spec: score >= threshold)"
 
     def test_threshold_one_does_not_fire_for_sub_one_score(self, capsys) -> None:
         article = _article(score=0.9999)
