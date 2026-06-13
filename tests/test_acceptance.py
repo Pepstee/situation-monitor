@@ -86,3 +86,12 @@ def test_acceptance_script_stdout_contains_article():
     lines = result.stdout.decode(errors="replace").splitlines()
     article_headings = [l for l in lines if l.startswith("## ")]
     assert article_headings, "No article headings (## ...) found in acceptance stdout"
+
+
+def test_acceptance_script_stdout_contains_domain_header():
+    """Stdout must contain at least one domain header (WORLD, MARKETS, or AI)."""
+    result = _run_acceptance()
+    stdout = result.stdout.decode(errors="replace")
+    assert any(domain in stdout for domain in ("WORLD", "MARKETS", "AI")), (
+        "Expected at least one domain header (WORLD, MARKETS, AI) in stdout"
+    )

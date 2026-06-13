@@ -24,7 +24,7 @@ from situation_monitor.ingestion.github_trending import GitHubTrendingFetcher
 from situation_monitor.ingestion.hn import HNFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.llm import get_llm_client
-from situation_monitor.models import Article
+from situation_monitor.models import Article, Domain
 from situation_monitor.alerting import check_and_emit_alerts
 from situation_monitor.polymarket import PolymarketClient, PolymarketMatcher
 from situation_monitor.propaganda import enrich_article
@@ -140,6 +140,17 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
     state_path = config.state_file or "state/reliability.json"
     tracker.load(state_path)
 
+    # Domain-tagged sources come first so they win URL-based deduplication.
+    for source_def in config.source_defs:
+        try:
+            url = source_def.url
+            client = None if _is_url(url) else _LocalFileClient()
+            fetched = RSSFetcher(client=client).fetch(url, source_def=source_def)
+            tracker.record_fetch(url, len(fetched))
+            articles.extend(fetched)
+        except Exception as exc:
+            print(f"Warning: failed to fetch {source_def.url!r}: {exc}", file=sys.stderr)
+
     for source in config.sources:
         try:
             resolved = _resolve_source(source)
@@ -155,9 +166,10 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
 
     llm = get_llm_client(config)
 
-    # Bias scoring + relevance
+    # Bias scoring + relevance (don't overwrite lean already set by a source_def)
     for article in articles:
-        article.source_lean = get_source_lean(article.source)
+        if article.source_lean is None:
+            article.source_lean = get_source_lean(article.source)
         article.source_reliability_label = get_source_reliability(article.source)
         article.reliability_tier = get_source_reliability(article.source)
         article.relevance_score = score_relevance(article, config.topics, llm)
@@ -231,32 +243,56 @@ def _assign_clusters(articles: list[Article]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _format_article(art: Article, heading: str = "##") -> None:
+    lean = art.source_lean or "—"
+    rel_tier = art.reliability_tier or "—"
+    rel = art.source_reliability_label or art.reliability.value
+    relevance = f"{art.relevance_score:.2f}" if art.relevance_score is not None else "—"
+    cluster = art.cluster_id or "—"
+    flags = ", ".join(art.propaganda_flags) if art.propaganda_flags else "none"
+    odds = f"{art.polymarket_odds:.2f}" if art.polymarket_odds is not None else "—"
+    print(f"{heading} {art.title}")
+    print(f"<{art.url}>")
+    print(
+        f"Source: {art.source} | Lean: {lean} | Reliability tier: {rel_tier} | "
+        f"Reliability: {rel} | Relevance: {relevance} | Cluster: {cluster}"
+    )
+    print(
+        f"Propaganda: {flags} | Loaded language: {art.loaded_language} | "
+        f"Propaganda flag: {art.propaganda_flag} | Polymarket: {odds}"
+    )
+    print()
+
+
 def _print_markdown(articles: list[Article]) -> None:
+    from collections import defaultdict
     from datetime import datetime
 
     print(f"# Situation Monitor Digest — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n")
     if not articles:
         print("_No stories found._")
         return
-    for art in articles:
-        lean = art.source_lean or "—"
-        rel_tier = art.reliability_tier or "—"
-        rel = art.source_reliability_label or art.reliability.value
-        relevance = f"{art.relevance_score:.2f}" if art.relevance_score is not None else "—"
-        cluster = art.cluster_id or "—"
-        flags = ", ".join(art.propaganda_flags) if art.propaganda_flags else "none"
-        odds = f"{art.polymarket_odds:.2f}" if art.polymarket_odds is not None else "—"
-        print(f"## {art.title}")
-        print(f"<{art.url}>")
-        print(
-            f"Source: {art.source} | Lean: {lean} | Reliability tier: {rel_tier} | "
-            f"Reliability: {rel} | Relevance: {relevance} | Cluster: {cluster}"
-        )
-        print(
-            f"Propaganda: {flags} | Loaded language: {art.loaded_language} | "
-            f"Propaganda flag: {art.propaganda_flag} | Polymarket: {odds}"
-        )
-        print()
+
+    domain_articles = [a for a in articles if a.domain is not None]
+    if domain_articles:
+        by_domain: dict = defaultdict(list)
+        undomain: list[Article] = []
+        for art in articles:
+            if art.domain is not None:
+                by_domain[art.domain].append(art)
+            else:
+                undomain.append(art)
+        for domain in [Domain.WORLD, Domain.MARKETS, Domain.AI]:
+            if domain not in by_domain:
+                continue
+            print(f"## {domain.name}\n")
+            for art in by_domain[domain]:
+                _format_article(art, heading="###")
+        for art in undomain:
+            _format_article(art, heading="##")
+    else:
+        for art in articles:
+            _format_article(art, heading="##")
 
 
 # ---------------------------------------------------------------------------

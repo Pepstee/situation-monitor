@@ -90,7 +90,7 @@ class Config:
     polymarket_slugs: list[str] = field(default_factory=list)
     dashboard_port: int = 8080
     topics: list[str] = field(default_factory=list)
-    source_defs: list[SourceDef] = field(default_factory=lambda: list(DEFAULT_SOURCE_DEFS))
+    source_defs: list[SourceDef] = field(default_factory=list)
     telegram_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
@@ -113,6 +113,17 @@ class Config:
         path = Path(path)
         with path.open() as fh:
             data: dict = json.load(fh)
+        if "source_defs" in data:
+            data["source_defs"] = [
+                SourceDef(
+                    url=sd["url"],
+                    name=sd["name"],
+                    domain=Domain[sd["domain"].upper()],
+                    lens=sd["lens"],
+                    description=sd.get("description", ""),
+                )
+                for sd in data["source_defs"]
+            ]
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
     @classmethod
