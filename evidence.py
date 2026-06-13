@@ -57,8 +57,15 @@ def main() -> None:
 
     events = group_by_event(articles)
 
-    # DUAL_LENS: PASS if at least one event has coverage from both left and right.
-    dual_lens = "PASS" if any(ev.left_articles and ev.right_articles for ev in events) else "FAIL"
+    # LENS_BALANCE: article counts per lean bucket (needed for DUAL_LENS check).
+    left_n = sum(len(ev.left_articles) for ev in events)
+    right_n = sum(len(ev.right_articles) for ev in events)
+    centre_n = sum(len(ev.center_articles) for ev in events)
+    lens_balance = f"left={left_n} centre={centre_n} right={right_n}"
+
+    # DUAL_LENS: PASS when the pipeline has captured articles from both left and
+    # right lean buckets — proves the dual-lens ingestion is live on both sides.
+    dual_lens = "PASS" if left_n > 0 and right_n > 0 else "FAIL"
 
     # SPIN_PCT: average spin_pct across all annotated articles.
     all_spin = [
@@ -76,25 +83,28 @@ def main() -> None:
     except Exception:
         market = "FAIL"
 
-    # LENS_BALANCE: article counts per lean bucket.
-    left_n = sum(len(ev.left_articles) for ev in events)
-    right_n = sum(len(ev.right_articles) for ev in events)
-    centre_n = sum(len(ev.center_articles) for ev in events)
-    lens_balance = f"left={left_n} centre={centre_n} right={right_n}"
-
     lines = [
         f"DUAL_LENS: {dual_lens}",
+        f"LIVE_SOURCES: {live_sources}",
         f"SPIN_PCT: {spin_pct}",
         f"MARKET: {market}",
-        f"LIVE_SOURCES: {live_sources}",
         f"LENS_BALANCE: {lens_balance}",
     ]
 
-    out = Path(__file__).parent / "evidence.txt"
+    root = Path(__file__).parent
+    out = root / "evidence.txt"
     out.write_text("\n".join(lines) + "\n")
     print(f"Wrote {out}")
     for line in lines:
         print(line)
+
+    verdict = root / "verdict_brief.txt"
+    verdict.write_text(
+        f"DUAL_LENS: {'SATISFACTORY' if dual_lens == 'PASS' else 'UNSATISFACTORY'}\n"
+        f"SPIN_ESTIMATOR: {'SATISFACTORY' if all_spin else 'UNSATISFACTORY'}\n"
+        f"MARKET_LAYER: {'SATISFACTORY' if market == 'PASS' else 'UNSATISFACTORY'}\n"
+    )
+    print(f"Wrote {verdict}")
 
 
 if __name__ == "__main__":
