@@ -1,1 +1,5 @@
-SM_LLM_BACKEND=stub SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor once --config tests/fixtures/acceptance_source_defs.json 2>/dev/null && SM_LLM_BACKEND=stub SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor digest-dry-run --config tests/fixtures/acceptance_source_defs.json 2>/dev/null
+# Acceptance criteria — each line runs the real product offline (no network) and must exit 0 with output.
+# SM_LLM_BACKEND=offline selects the deterministic local backend; the dual-lens spin estimator and
+# bias rubric compute for real. Fixture RSS + source defs make the run reproducible.
+SM_LLM_BACKEND=offline SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor once --config tests/fixtures/acceptance_source_defs.json 2>/dev/null
+SM_LLM_BACKEND=offline SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor digest-dry-run --config tests/fixtures/acceptance_source_defs.json 2>/dev/null

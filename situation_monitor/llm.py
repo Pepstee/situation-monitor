@@ -21,12 +21,16 @@ def get_llm_client(
     if _override is not None:
         return _override
 
-    if config.llm_backend == "stub":
+    # "offline" / "deterministic" / "stub" all select the dependency-free local backend:
+    # the dual-lens spin estimator and bias rubric run for real (no network), and the
+    # optional LLM enrichment hook returns a neutral fixed score. "offline" is the
+    # canonical name used by the acceptance run; "stub" is retained for the test suite.
+    if config.llm_backend in ("offline", "deterministic", "stub"):
 
-        def _stub(_prompt: str) -> str:
+        def _offline(_prompt: str) -> str:
             return '{"score": 0.5}'
 
-        return _stub
+        return _offline
 
     if config.llm_backend == "ollama":
 
