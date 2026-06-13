@@ -1,1 +1,1 @@
-SM_LLM_BACKEND=stub SM_SOURCES=tests/fixtures/rss_sample.xml SM_POLYMARKET_MARKETS=tests/fixtures/polymarket/markets.json python3 -m situation_monitor once --config tests/fixtures/acceptance_source_defs.json 2>/dev/null
+SM_LLM_BACKEND=stub SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor once --config tests/fixtures/acceptance_source_defs.json 2>/dev/null

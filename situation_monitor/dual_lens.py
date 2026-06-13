@@ -40,7 +40,7 @@ def _significant_words(title: str) -> frozenset[str]:
 
 
 def _stub_spin(article: Article) -> SpinResult:
-    lean = _prior_lean(article.source)
+    lean = article.source_lean or _prior_lean(article.source)
     return SpinResult(
         spin_pct=50.0,
         lens=lean,

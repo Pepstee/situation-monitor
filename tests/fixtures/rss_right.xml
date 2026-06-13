@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Right News Feed</title>
+    <link>http://right-news.example.com</link>
+    <description>Right-leaning news fixture for acceptance tests</description>
+    <item>
+      <title>Government Climate Policy Reform Threatens Economic Growth</title>
+      <link>http://right-news.example.com/climate-policy-reform</link>
+      <description>Business groups warn that proposed government climate policy reform will destroy jobs and hamper economic growth across key sectors.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

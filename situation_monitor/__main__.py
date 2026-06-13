@@ -300,22 +300,59 @@ def _print_markdown(articles: list[Article]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _print_dual_lens(events: list) -> None:
+    """Print dual-lens event blocks (only events with left or right articles)."""
+    relevant = [e for e in events if e.left_articles or e.right_articles]
+    if not relevant:
+        return
+    print("## DUAL-LENS EVENTS\n")
+    for event in relevant:
+        print(f"### {event.event_title}")
+        print(f"spin_delta: {event.spin_delta:.1f}\n")
+        if event.left_articles:
+            count = len(event.left_articles)
+            print(f"#### LEFT ({count} article{'s' if count != 1 else ''})")
+            for aa in event.left_articles:
+                print(f"- {aa.article.title} | spin_pct: {aa.spin.spin_pct:.1f}%")
+            print()
+        if event.right_articles:
+            count = len(event.right_articles)
+            print(f"#### RIGHT ({count} article{'s' if count != 1 else ''})")
+            for aa in event.right_articles:
+                print(f"- {aa.article.title} | spin_pct: {aa.spin.spin_pct:.1f}%")
+            print()
+
+
 def _cmd_once(config: Config) -> None:
+    from situation_monitor.dual_lens import group_by_event
     articles = _ingest_and_enrich(config)
     check_and_emit_alerts(articles, config.alert_threshold)
     _print_markdown(articles)
+    _print_dual_lens(group_by_event(articles))
 
 
 def _cmd_serve(config: Config) -> None:
-    _store: list[Article] = []
+    from situation_monitor.dual_lens import group_by_event
+    from situation_monitor.practical import fetch_practical_movers
 
-    def _get_stories() -> list[Article]:
-        return _store
+    _store: list = []
+    _events: list = []
+    _practical: list = []
 
-    app = make_app(_get_stories)
+    app = make_app(
+        lambda: _store,
+        lambda: _events,
+        lambda: _practical,
+    )
 
     def _refresh() -> None:
-        _store[:] = _ingest_and_enrich(config)
+        articles = _ingest_and_enrich(config)
+        _store[:] = articles
+        _events[:] = group_by_event(articles)
+        try:
+            _practical[:] = fetch_practical_movers()
+        except Exception:
+            pass
 
     _refresh()
     print(f"Dashboard running on http://0.0.0.0:{config.dashboard_port}", file=sys.stderr)
