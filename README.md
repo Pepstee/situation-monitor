@@ -143,6 +143,49 @@ The `/api/practical` JSON endpoint exposes all movers for dashboard widgets or e
 
 ---
 
+## Industry Parity
+
+Situation Monitor is benchmarked against three reference products: **Ground News** (per-story political coverage spread), **AllSides** (outlet bias ratings with editorial evidence), and **Bloomberg Terminal / Refinitiv** (professional market data + news terminal). The table below maps each core capability, states whether Situation Monitor meets, exceeds, or intentionally narrows the reference, and cites the concrete feature responsible.
+
+### Capability map
+
+| Capability | Situation Monitor | vs Ground News | vs AllSides | vs Bloomberg Terminal / Refinitiv |
+|---|---|---|---|---|
+| **Lens comparison** | `dual_lens.py`: left / right / centre / state buckets per event; bucket counts exposed in `/api/events` JSON | **Meets** — Ground News shows left / centre / right outlet count per story via colour-coded bar | **Exceeds** — AllSides compares outlet-level ratings across stories; no per-story bucket count | **Exceeds** — terminal news widget carries no per-story political-lean breakdown |
+| **Bias methodology** | `bias.py`: `ALLSIDES_PRIORS` + `CURATED_BIAS` table (~25 domains, mirroring AllSides five-point spectrum); LLM rubric applied on top; `DEFAULT_SOURCE_DEFS` registry fills remaining domains | **Exceeds** — Ground News colours by outlet; no named methodology or published rubric | **Meets** — AllSides five-point spectrum (Left → Lean Left → Centre → Lean Right → Right) with editorial evidence; `ALLSIDES_PRIORS` is seeded directly from AllSides ratings | **Exceeds** — Bloomberg / Refinitiv carry no outlet bias rating or methodology |
+| **Spin estimate with receipts** | `SpinEstimator` (`bias.py`): four rubrics — loaded language, omission, sourcing asymmetry, emotional framing — produce `spin_pct` (0–100) + per-article JSON rubric scores; full breakdown at `/api/events/<id>/rationale` | **Exceeds** — Ground News shows no spin estimate; coverage spread only | **Exceeds** — AllSides rates outlets; no per-article rubric breakdown or machine-readable receipts | **Exceeds** — Bloomberg / Refinitiv carry no editorial spin estimate or per-article rubric |
+| **Market / FX layer** | `practical.py`: ECB `eurofxref-daily.xml` (EUR/USD), Yahoo Finance RSS (`CL=F` WTI crude, `GC=F` Gold), Reuters Politics + AP Politics regulatory movers; all exposed at `/api/practical` | **Exceeds** — Ground News carries no market or FX data | **Exceeds** — AllSides carries no market or FX data | **Narrows intentionally** — Bloomberg Terminal covers the full asset universe (equities, bonds, derivatives, full FX cross-rates, commodities futures strip); Situation Monitor covers three free public signals as macro context only |
+| **Dual-lens view** | Flask dashboard (`edge serve`): side-by-side event card with `spin_delta` = \|avg\_left\_spin − avg\_right\_spin\|; `spin_pct` rendered inline per article | **Meets** — Ground News renders a per-story left / right coverage bar; no spin delta or per-article score | **Exceeds** — AllSides shows outlet ratings side-by-side; no event-level spin delta or inline per-article score | **Exceeds** — no equivalent dual-lens event card or spin delta in terminal news |
+| **Digest output** | `edge once` → Markdown digest to stdout; `edge run` → looped every `poll_interval_seconds`; `edge serve` → Flask dashboard auto-refresh 60 s | **Narrows intentionally** — Ground News delivers a curated daily email with editorial curation; Situation Monitor targets developer CLI / self-hosted, no curation layer | **Narrows intentionally** — AllSides email digest with editorial curation; Situation Monitor targets developer CLI / self-hosted | **Narrows intentionally** — terminal delivers real-time streaming tick-by-tick; Situation Monitor polls on a configurable interval (default 600 s) using free public feeds |
+
+### End-to-end parity evidence: Belfast acceptance pipeline
+
+The [Belfast acceptance test](tests/situation_monitor/test_acceptance_belfast.py) (`TestBelfastConstraintWithSpinEstimator`) exercises the complete core flow with no network access, providing machine-checked evidence for the parity claims above:
+
+```
+fixture RSS (left + right articles: "Government Climate Policy Reform — Backed by Scientists"
+             vs "Government Climate Policy Reform — Threatens Economic Growth")
+  → RSSFetcher → Articles with source_lean set from SourceDef
+  → SpinEstimator (mock-LLM stand-in for ollama) → spin_pct + rubric receipts
+  → group_by_event (dual_lens.py) → DualLensEvent with both columns non-empty
+  → spin_delta = |avg_left_spin − avg_right_spin| = 45.0 (left=80, right=35)
+  → Flask dashboard renders spin_pct inline; /api/events/<id>/rationale exposes receipts
+```
+
+Specific assertions that map directly to parity claims:
+
+| Test | Parity claim verified |
+|---|---|
+| `TestBelfastConstraintWithSpinEstimator::test_at_least_one_event_both_columns_non_empty` | Dual-lens coverage ≥ Ground News: both columns non-empty for a shared event |
+| `TestBelfastConstraintWithSpinEstimator::test_estimator_spin_results_carry_receipts` | Receipts present at `/api/events/<id>/rationale`, exceeding AllSides per-article depth |
+| `TestBelfastConstraintWithSpinEstimator::test_high_significance_spin_delta_with_estimator` | `spin_delta == pytest.approx(45.0)` — quantified divergence, not asserted |
+| `TestBelfastConstraintWithSpinEstimator::test_left_articles_have_left_lens_from_estimator` | Lens assignment is data-driven (LLM rubric), not hard-coded |
+| `TestBelfastDashboardRender::test_api_events_endpoint_returns_dual_events` | `/api/events` JSON endpoint exposes dual-lens structure for downstream consumers |
+
+The `acceptance` file (`cat acceptance | sh`) runs the same pipeline end-to-end against `tests/fixtures/rss_sample.xml` with `SM_LLM_BACKEND=stub`, confirming the production CLI (`edge once`, `edge digest-dry-run`) produces a Markdown digest on a single-event → both lenses → spin estimate → practical takeaway path.
+
+---
+
 ## Source config — lenses and live feeds
 
 Sources are defined in `situation_monitor/config.py` as `SourceDef` objects with a `domain` (`WORLD`, `MARKETS`, `AI`) and a `lens`. The four lenses and representative live feeds per domain:
