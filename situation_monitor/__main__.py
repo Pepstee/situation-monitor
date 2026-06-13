@@ -314,12 +314,16 @@ def _print_dual_lens(events: list) -> None:
             print(f"#### LEFT ({count} article{'s' if count != 1 else ''})")
             for aa in event.left_articles:
                 print(f"- {aa.article.title} | spin_pct: {aa.spin.spin_pct:.1f}%")
+                if aa.spin.receipts:
+                    print(f"  rationale: {aa.spin.receipts}")
             print()
         if event.right_articles:
             count = len(event.right_articles)
             print(f"#### RIGHT ({count} article{'s' if count != 1 else ''})")
             for aa in event.right_articles:
                 print(f"- {aa.article.title} | spin_pct: {aa.spin.spin_pct:.1f}%")
+                if aa.spin.receipts:
+                    print(f"  rationale: {aa.spin.receipts}")
             print()
 
 
