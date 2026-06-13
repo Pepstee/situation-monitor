@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
-from flask import Flask, render_template_string
+from flask import Flask, Response, abort, jsonify, render_template_string
 
 _TEMPLATE = """\
 {% autoescape true %}
@@ -21,11 +21,57 @@ _TEMPLATE = """\
     th { background: #f0f0f0; }
     tr:nth-child(even) { background: #fafafa; }
     a { color: #1a6fa8; }
+    .dual-cols { display: flex; gap: 1rem; margin-top: 0.5rem; }
+    .col { flex: 1; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+    .col-left { background: #f0f4ff; }
+    .col-right { background: #fff4f0; }
+    .spin-badge { display: inline-block; background: #444; color: #fff;
+                  border-radius: 3px; padding: 0 0.3rem; font-size: 0.75rem;
+                  margin-right: 0.4rem; }
+    .event-card { margin-bottom: 1.5rem; border: 1px solid #ccc;
+                  border-radius: 4px; padding: 0.75rem; }
+    .spin-delta { font-size: 0.85rem; color: #555; margin: 0.25rem 0 0.75rem; }
+    .article-card { margin-bottom: 0.5rem; font-size: 0.9rem; }
+    h2 { margin-top: 1.5rem; }
   </style>
 </head>
 <body>
   <h1>Situation Monitor</h1>
   <p>{{ stories | length }} stories — auto-refreshes every 60 s</p>
+  {% if events %}
+  <h2>Dual-Lens Events</h2>
+  {% for event in events %}
+  <div class="event-card">
+    <h3>{{ event.event_title }}</h3>
+    <p class="spin-delta">spin_delta: {{ '%.1f' | format(event.spin_delta) }}</p>
+    <div class="dual-cols">
+      <div class="col col-left">
+        <h4>LEFT</h4>
+        {% for aa in event.left_articles %}
+        <div class="article-card">
+          <span class="spin-badge">spin_pct: {{ '%.1f' | format(aa.spin.spin_pct) }}%</span>
+          <a href="{{ aa.article.url }}">{{ aa.article.title }}</a><br>
+          <small>{{ aa.article.source }}</small>
+        </div>
+        {% endfor %}
+        {% if not event.left_articles %}<em>No left-framing articles</em>{% endif %}
+      </div>
+      <div class="col col-right">
+        <h4>RIGHT</h4>
+        {% for aa in event.right_articles %}
+        <div class="article-card">
+          <span class="spin-badge">spin_pct: {{ '%.1f' | format(aa.spin.spin_pct) }}%</span>
+          <a href="{{ aa.article.url }}">{{ aa.article.title }}</a><br>
+          <small>{{ aa.article.source }}</small>
+        </div>
+        {% endfor %}
+        {% if not event.right_articles %}<em>No right-framing articles</em>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+  <h2>All Stories</h2>
   <table>
     <thead>
       <tr>
@@ -60,16 +106,90 @@ _TEMPLATE = """\
 """
 
 
-def make_app(get_stories: Callable[[], list]) -> Flask:
+def _event_to_dict(event) -> dict:
+    def _aa_dict(aa) -> dict:
+        art = aa.article
+        return {
+            "url": art.url,
+            "title": art.title,
+            "source": art.source,
+            "source_lean": art.source_lean,
+            "cluster_id": art.cluster_id,
+            "relevance_score": art.relevance_score,
+            "spin_pct": aa.spin.spin_pct,
+            "spin_lens": aa.spin.lens,
+            "spin_receipts": aa.spin.receipts,
+        }
+
+    return {
+        "event_title": event.event_title,
+        "spin_delta": event.spin_delta,
+        "left_articles": [_aa_dict(aa) for aa in event.left_articles],
+        "right_articles": [_aa_dict(aa) for aa in event.right_articles],
+        "center_articles": [_aa_dict(aa) for aa in event.center_articles],
+    }
+
+
+def _practical_to_dict(pm) -> dict:
+    return {
+        "asset": pm.asset,
+        "change_pct": pm.change_pct,
+        "direction": pm.direction,
+        "who_it_affects": pm.who_it_affects,
+        "what_to_watch": pm.what_to_watch,
+        "source_url": pm.source_url,
+    }
+
+
+def make_app(
+    get_stories: Callable[[], list],
+    get_events: Optional[Callable[[], list]] = None,
+    get_practical: Optional[Callable[[], list]] = None,
+) -> Flask:
     """Create the Flask dashboard app.
 
     Args:
         get_stories: zero-argument callable returning the current list of Article objects.
+        get_events: optional callable returning the current list of DualLensEvent objects.
+        get_practical: optional callable returning the current list of PracticalMover objects.
     """
     app = Flask(__name__)
 
     @app.route("/")
     def index() -> str:
-        return render_template_string(_TEMPLATE, stories=get_stories())
+        stories = get_stories()
+        events = get_events() if get_events is not None else []
+        return render_template_string(_TEMPLATE, stories=stories, events=events)
+
+    @app.route("/api/events")
+    def api_events() -> Response:
+        events = get_events() if get_events is not None else []
+        return jsonify([_event_to_dict(e) for e in events])
+
+    @app.route("/api/events/<cluster_id>/rationale")
+    def api_event_rationale(cluster_id: str) -> Response:
+        events = get_events() if get_events is not None else []
+        try:
+            idx = int(cluster_id)
+        except ValueError:
+            abort(404)
+        if idx < 0 or idx >= len(events):
+            abort(404)
+        event = events[idx]
+        all_articles = event.left_articles + event.right_articles + event.center_articles
+        receipts = [
+            {
+                "title": aa.article.title,
+                "source": aa.article.source,
+                "receipts": aa.spin.receipts,
+            }
+            for aa in all_articles
+        ]
+        return jsonify({"event_title": event.event_title, "receipts": receipts})
+
+    @app.route("/api/practical")
+    def api_practical() -> Response:
+        practical = get_practical() if get_practical is not None else []
+        return jsonify([_practical_to_dict(p) for p in practical])
 
     return app

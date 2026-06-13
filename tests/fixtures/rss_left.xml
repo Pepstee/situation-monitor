@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Left News Feed</title>
+    <link>http://left-news.example.com</link>
+    <description>Left-leaning news fixture for acceptance tests</description>
+    <item>
+      <title>Government Climate Policy Reform Backed by Scientists</title>
+      <link>http://left-news.example.com/climate-policy-reform</link>
+      <description>Climate scientists and progressive groups endorse sweeping government climate policy reform proposals targeting carbon emissions.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
