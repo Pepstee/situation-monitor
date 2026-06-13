@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from situation_monitor.bias import _prior_lean
+from situation_monitor.lexicon import score_text
 from situation_monitor.models import Article, SpinResult
 
 _STOPWORDS = frozenset({
@@ -49,6 +50,25 @@ def _stub_spin(article: Article) -> SpinResult:
     )
 
 
+def deterministic_spin(article: Article) -> SpinResult:
+    """Measure spin from the article text itself — no LLM required.
+
+    This is the default estimator: it scores the headline and body against the
+    curated spin lexicons (see :mod:`situation_monitor.lexicon`), producing a
+    differentiated, explainable spin_pct so opposing framings of the same event
+    yield a real, non-zero spin_delta. Political lean still derives from the
+    source prior, preserving left/right/centre bucketing.
+    """
+    lean = article.source_lean or _prior_lean(article.source)
+    score = score_text(article.title, article.body or "")
+    return SpinResult(
+        spin_pct=score.spin_pct,
+        lens=lean,
+        rubric=score.subscores,
+        receipts=score.receipts(),
+    )
+
+
 def _lean_bucket(lens: str) -> str:
     if "left" in lens:
         return "left"
@@ -73,10 +93,11 @@ def group_by_event(
     than the crude first-non-stopword cluster_id. Returns one DualLensEvent per
     cluster with articles pre-bucketed by political lean and inline SpinResult.
 
-    spin_fn defaults to a bias-prior stub so tests can run without an LLM.
+    spin_fn defaults to the deterministic lexical estimator so spin is genuinely
+    measurable offline, without an LLM.
     """
     if spin_fn is None:
-        spin_fn = _stub_spin
+        spin_fn = deterministic_spin
 
     annotated = [AnnotatedArticle(article=a, spin=spin_fn(a)) for a in articles]
 
