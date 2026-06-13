@@ -366,6 +366,23 @@ def _cmd_run(config: Config) -> None:
         time.sleep(config.poll_interval_seconds)
 
 
+def _cmd_digest_dry_run(config: Config) -> None:
+    """Assemble a Telegram digest from a fresh ingest and print it — never sends."""
+    from situation_monitor.digest import daily_digest
+    from situation_monitor.dual_lens import group_by_event
+    from situation_monitor.practical import fetch_practical_movers
+
+    articles = _ingest_and_enrich(config)
+    events = group_by_event(articles)
+
+    try:
+        movers = fetch_practical_movers()
+    except Exception:
+        movers = []
+
+    print(daily_digest(events, movers))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -392,6 +409,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("serve", parents=[shared], help="Start web dashboard")
     sub.add_parser("run", parents=[shared], help="Loop 'once' every poll_interval_seconds")
     sub.add_parser("show-config", parents=[shared], help="Print the resolved Config and exit")
+    sub.add_parser(
+        "digest-dry-run",
+        parents=[shared],
+        help="Assemble a Telegram digest from recent events and print it — never sends",
+    )
 
     args = parser.parse_args(argv)
 
@@ -408,6 +430,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_serve(config)
     elif args.cmd == "run":
         _cmd_run(config)
+    elif args.cmd == "digest-dry-run":
+        _cmd_digest_dry_run(config)
 
 
 if __name__ == "__main__":
