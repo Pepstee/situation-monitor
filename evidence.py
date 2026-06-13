@@ -85,9 +85,9 @@ def main() -> None:
 
     lines = [
         f"DUAL_LENS: {dual_lens}",
-        f"LIVE_SOURCES: {live_sources}",
         f"SPIN_PCT: {spin_pct}",
         f"MARKET: {market}",
+        f"LIVE_SOURCES: {live_sources}",
         f"LENS_BALANCE: {lens_balance}",
     ]
 
@@ -100,9 +100,9 @@ def main() -> None:
 
     verdict = root / "verdict_brief.txt"
     verdict.write_text(
-        f"DUAL_LENS: {'SATISFACTORY' if dual_lens == 'PASS' else 'UNSATISFACTORY'}\n"
-        f"SPIN_ESTIMATOR: {'SATISFACTORY' if all_spin else 'UNSATISFACTORY'}\n"
-        f"MARKET_LAYER: {'SATISFACTORY' if market == 'PASS' else 'UNSATISFACTORY'}\n"
+        f"DUAL_LENS: {'Y' if dual_lens == 'PASS' else 'N'}\n"
+        f"SPIN_PCT: {'Y' if all_spin else 'N'}\n"
+        f"MARKET: {'Y' if market == 'PASS' else 'N'}\n"
     )
     print(f"Wrote {verdict}")
 
