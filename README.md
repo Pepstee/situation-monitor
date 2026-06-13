@@ -106,40 +106,110 @@ The `/api/practical` JSON endpoint exposes all movers for dashboard widgets or e
 
 ---
 
-## Core flow end-to-end
+## Core Flow
+
+The following walkthrough traces a single event — a US Federal Reserve rate decision — through all five pipeline stages, showing example text output at each step.
+
+**1. One event ingested**
+
+Six sources fetch the story. After URL and near-title deduplication, five articles survive with source-lean assignments from `ALLSIDES_PRIORS`:
 
 ```
-1. Sources (RSS / hn:// / github_trending:// / crypto)
-        ↓ per-source fetcher
-   raw articles
-
-2. dedup.py  — exact URL dedup + near-title dedup
-   reliability.py  — per-source fetch counts → state_file
-
-3. bias.py  — source lean + reliability label from ALLSIDES_PRIORS
-   propaganda.py  — LLM flags (loaded language, propaganda)
-   polymarket.py  — keyword match → implied odds from prediction market
-
-4. dual_lens.py
-     group_by_event()  — cluster by ≥2 shared significant words
-     spin_fn per article  — SpinEstimator rubric (LLM or prior fallback)
-     left / right / centre bucket assignment
-     spin_delta = |avg_left_spin − avg_right_spin|
-
-5. practical.py
-     fetch_practical_movers()  — ECB FX, Yahoo Finance commodities
-     fetch_regulatory_movers()  — Reuters Politics, AP Politics
-
-6. Output
-     once  → Markdown digest to stdout
-     serve → Flask dashboard auto-refresh 60 s
-              /api/events  (dual-lens JSON)
-              /api/events/<id>/rationale  (per-article rubric receipts)
-              /api/practical  (market movers JSON)
-     run   → loop steps 1 – 6 every poll_interval_seconds
+source             lean    domain
+guardian.com       left    WORLD
+npr.org            left    WORLD
+cnbc.com           right   MARKETS
+marketwatch.com    right   MARKETS
+reuters.com        center  WORLD
 ```
 
-**Practical takeaway for one event:** a story about a Fed rate decision arrives from six sources. The left bucket (NPR, Guardian) averages spin_pct 55 with omission firing. The right bucket (CNBC, MarketWatch) averages spin_pct 38 with sourcing_asymmetry firing. spin_delta = 17. Simultaneously, the practical layer shows EUR/USD up 0.4 % and Gold up 1.1 %, which the dashboard renders below the event card — giving the reader both the narrative divergence and the real-world price signal in one screen.
+**2. Left-lens framing extracted**
+
+`SpinEstimator` runs on the Guardian article (title + first 1 500 chars). The LLM returns:
+
+```json
+{
+  "spin_pct": 61,
+  "lens": "left",
+  "rubric": {
+    "loaded_language": 0.60,
+    "omission": 0.70,
+    "sourcing_asymmetry": 0.30,
+    "emotional_framing": 0.55
+  }
+}
+```
+
+Rubric receipt logged: `omission` firing — no hawkish economist quoted; loaded headline: "Fed delivers blow to working families".
+
+**3. Right-lens framing extracted**
+
+`SpinEstimator` runs on the CNBC article:
+
+```json
+{
+  "spin_pct": 38,
+  "lens": "right",
+  "rubric": {
+    "loaded_language": 0.20,
+    "omission": 0.30,
+    "sourcing_asymmetry": 0.55,
+    "emotional_framing": 0.20
+  }
+}
+```
+
+Rubric receipt logged: `sourcing_asymmetry` firing — all quotes from Fed officials; no consumer-advocacy group cited.
+
+**4. Spin estimate produced with rubric receipts**
+
+`dual_lens.py` computes the event-level delta:
+
+```
+left bucket  (Guardian, NPR)      avg spin_pct = 55.0
+right bucket (CNBC, MarketWatch)  avg spin_pct = 38.0
+spin_delta = |55.0 − 38.0| = 17.0  →  moderate divergence flagged
+```
+
+Full rubric receipts accessible at `/api/events/<id>/rationale`:
+
+```json
+{
+  "event_id": "fed-rate-50bps",
+  "spin_delta": 17.0,
+  "articles": [
+    { "source": "guardian.com",    "spin_pct": 61, "rubric": { "omission": 0.70 } },
+    { "source": "cnbc.com",        "spin_pct": 38, "rubric": { "sourcing_asymmetry": 0.55 } }
+  ]
+}
+```
+
+**5. Practical takeaway generated**
+
+`fetch_practical_movers()` runs in the same cycle:
+
+```
+EUR/USD   +0.41 %   ECB eurofxref-daily.xml vs 1.10 baseline
+WTI Crude −1.2  %   Yahoo Finance CL=F RSS headline
+Gold      +1.1  %   Yahoo Finance GC=F RSS headline
+
+Regulatory: "Senate Banking Committee schedules emergency rate hearing"
+            who_it_affects: "US banks, mortgage lenders"
+            what_to_watch:  "potential reversal signal from Congress"
+```
+
+Dashboard output (`edge serve`):
+
+```
+┌─ Federal Reserve raises benchmark rate 50 bps  spin_delta: 17.0 ────────────────┐
+│  LEFT (avg spin 55)                │  RIGHT (avg spin 38)                         │
+│  [61%] Guardian — "Fed delivers…"  │  [38%] CNBC — "Fed hikes in line with…"      │
+│  [49%] NPR — "Rate rise squeezes…" │  [38%] MarketWatch — "Fed signals pause…"    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  EUR/USD +0.41 %  │  WTI −1.2 %  │  Gold +1.1 %                                  │
+│  Regulatory: Senate Banking hearing  (Reuters Politics)                            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -187,53 +257,46 @@ The rationale endpoint (`/api/events/<id>/rationale`) exposes the full per-artic
 
 ---
 
-### Situation Monitor vs Ground News — lens comparison
+### Ground News parity
 
-Ground News (ground.news) is a commercial service that shows how many outlets from the political left, centre, and right are covering a given story, displayed as a colour-coded coverage bar. It identifies "blind spots" when a story is covered by only one wing, and shows the top headline from each side for direct comparison.
+Ground News (ground.news) is a commercial service that shows per-story political coverage spread, side-by-side headline comparison across the left/centre/right spectrum, and blind-spot alerts when a story is covered by only one wing. The table below maps five core feature dimensions to their Situation Monitor equivalents.
 
-| Feature | Reference Product | Situation Monitor | Status |
-|---|---|---|---|
-| Per-story outlet count by political lean | Ground News: colour-coded bar showing number of left, centre, and right outlets covering each story; refreshed as new articles are indexed | `dual_lens.py`: `left_articles`, `right_articles`, `center_articles` bucket lists per `DualLensEvent`; counts exposed in `/api/events` JSON | Parity |
-| Side-by-side headline comparison | Ground News: shows the top headline from one left and one right outlet for each story, enabling a direct wording comparison | Flask dashboard (`edge serve`): renders article titles from each bucket side-by-side in an event card with `spin_pct` inline per article | Exceeds — Situation Monitor shows all bucketed articles, not just one headline per side, and adds a spin score per article |
-| Coverage blind-spot detection | Ground News: flags stories covered exclusively by one wing with a "blind spot" label | `spin_delta` = \|avg\_left\_spin − avg\_right\_spin\|; a delta threshold can be used to surface divergent events; no dedicated "blind spot" label | Gap — Ground News has an explicit one-click blind-spot filter; Situation Monitor exposes the signal via spin_delta but does not label it |
-| Quantified framing divergence | Ground News: no framing or spin score; coverage spread only | `SpinEstimator` produces `spin_pct` per article and `spin_delta` per event; rubric receipts at `/api/events/<id>/rationale` | Exceeds — Situation Monitor adds a quantified framing layer absent from Ground News |
-| Source coverage breadth | Ground News: indexes thousands of outlets across 50+ countries via a proprietary crawl | Situation Monitor: ~30 configured RSS feeds from 4 lenses (left, right, centre, state); extensible via `SM_SOURCES` | Gap — Ground News indexes far more outlets; Situation Monitor is limited to configured feeds |
-| User-curated story interest | Ground News: users can follow topics and receive a personalised feed filtered to their interests | No personalisation layer; all configured sources are ingested each cycle | Gap — Ground News has a follow/interest graph; Situation Monitor is not personalised |
-| Access model | Ground News: freemium web app with a paid subscription for full features | Situation Monitor: self-hosted open-source CLI and dashboard; no paywall | Exceeds — zero cost, no account required, data stays local |
-
----
-
-### Situation Monitor vs AllSides — bias methodology, rubric, and outlet ratings
-
-AllSides (allsides.com) publishes a five-point political bias rating (Left, Lean Left, Center, Lean Right, Right) for hundreds of US news outlets, each rating backed by one or more of four evidence types: editorial review, blind survey of readers, community feedback, or independent research. AllSides also publishes an editorial-balance rubric explaining the criteria used to rate outlets.
-
-| Feature | Reference Product | Situation Monitor | Status |
-|---|---|---|---|
-| Outlet bias rating scale | AllSides: five-point spectrum — Left, Lean Left, Center, Lean Right, Right — published for ~900 outlets with editorial evidence notes | `ALLSIDES_PRIORS` + `CURATED_BIAS` table in `bias.py`: five-point scale mirroring AllSides for ~25 major domains (guardian.com, foxnews.com, bbc.co.uk, cnbc.com, etc.); `DEFAULT_SOURCE_DEFS` fills remaining configured feeds | Gap — AllSides covers ~900 outlets; Situation Monitor's curated table covers ~25 with the rest defaulting to `center` |
-| Loaded language detection | AllSides: editorial reviewers flag headlines containing emotionally charged vocabulary as evidence for a bias rating; no automated per-article score | `SpinEstimator` rubric: charged words are matched against a synonym list and scored 0–1 as `loaded_language`; contributes to `spin_pct` | Exceeds — Situation Monitor automates per-article scoring rather than relying on periodic editorial review |
-| Omission / missing context | AllSides: "Missing Context" is one of four named evidence categories; editors cite specific omissions when rating an outlet | `SpinEstimator` rubric: `omission` score (0–1) flags missing opposing views, absent data, or single-source claims on multi-actor events | Exceeds — applied per article in real time; AllSides applies this criterion only during periodic outlet reviews |
-| Sourcing asymmetry | AllSides: editorial-balance criterion checks whether credentialled experts are quoted for both sides; assessed at outlet level over time | `SpinEstimator` rubric: `sourcing_asymmetry` score (0–1) checks whether expert or official quotes favour only one side within a single article | Exceeds — per-article granularity vs AllSides' outlet-level periodic assessment |
-| Emotional framing | AllSides: no named rubric category; emotional or sensationalist content may inform the editorial review holistically | `SpinEstimator` rubric: `emotional_framing` score (0–1) flags personalised victim/hero narratives, rhetorical questions, fear/triumph sequencing before evidence | Exceeds — explicit scored rubric category absent from AllSides' published methodology |
-| Machine-readable per-article scores | AllSides: outlet ratings are published as human-readable web pages and a downloadable CSV; no per-article JSON | `spin_pct` (0–100 float) + `{"loaded_language": 0–1, "omission": 0–1, "sourcing_asymmetry": 0–1, "emotional_framing": 0–1}` returned per article; full breakdown at `/api/events/<id>/rationale` | Exceeds — AllSides has no per-article machine-readable rubric output |
-| LLM fallback to curated prior | AllSides: ratings are human-assigned; no LLM or algorithmic fallback | When the LLM (`claude` or `ollama`) returns an unparseable response, `SpinEstimator` falls back to `ALLSIDES_PRIORS` — the curated table seeded from AllSides ratings | Parity — ensures every article gets at least an AllSides-calibrated lean even when the LLM is unavailable |
-| Outlet rating update cadence | AllSides: ratings are updated periodically (months to years) via structured editorial review or new reader surveys | `ALLSIDES_PRIORS` / `CURATED_BIAS` are updated by editing `bias.py`; no automated cadence | Gap — AllSides has a formal review process; Situation Monitor requires a manual code edit to update ratings |
+| Feature | Ground News | Situation Monitor | Parity | Justification |
+|---|---|---|---|---|
+| Lens comparison | Colour-coded bar showing count of left / centre / right outlets per story; top headline from one source per side | `dual_lens.py` left/right/centre bucket lists per `DualLensEvent`; all bucketed article titles rendered side-by-side with `spin_pct` per article in the dashboard | exceeds | Shows all bucketed articles, not just one headline per side; adds a per-article spin score absent from Ground News |
+| Spin measurement | No framing or spin score; coverage-spread bar only | `SpinEstimator`: `spin_pct` (0–100) per article; `spin_delta` per event; full four-rubric breakdown at `/api/events/<id>/rationale` | exceeds | Quantified framing layer absent from Ground News; machine-readable rubric receipts enable third-party auditing |
+| Source balance config | Proprietary outlet index; no user-configurable source list | Sources defined via `SM_SOURCES` env var or JSON config; any RSS feed assignable to any lens | meets | Same configurability intent delivered through an open, editable config rather than a closed proprietary index |
+| Breaking alerts | Push notifications on mobile app when a story becomes a blind spot or breaks above a coverage threshold | Telegram delivery via `SM_TELEGRAM_TOKEN` / `SM_TELEGRAM_CHAT_ID` when relevance exceeds `SM_ALERT_THRESHOLD` | meets | Same alert-on-threshold pattern; Situation Monitor uses Telegram rather than a proprietary push channel |
+| Explainability | No rubric or reasoning exposed; colour bar only | Per-article rubric scores (`loaded_language`, `omission`, `sourcing_asymmetry`, `emotional_framing`) at `/api/events/<id>/rationale` | exceeds | Explicit machine-readable audit trail per article; Ground News provides no explanation of why a story is labelled divergent |
+| Access model | Freemium web app; full features require a paid subscription | Self-hosted open-source CLI and dashboard; no paywall, no account required, data stays local | exceeds | Zero marginal cost and full feature access without a licence |
 
 ---
 
-### Situation Monitor vs Bloomberg Terminal / Tiingo CLI — market dashboard
+### Bias methodology vs AllSides / MBFC
 
-Bloomberg Terminal is a professional financial data platform providing real-time streaming prices across the full asset universe (equities, fixed income, FX, commodities, derivatives), alongside a news ticker, regulatory filings, and analyst research. Tiingo CLI is an open-source command-line tool that queries the Tiingo API for end-of-day and intraday price data, news headlines, and fundamentals — a developer-friendly terminal analogue at lower cost.
+AllSides publishes a five-point outlet bias rating backed by editorial review, reader surveys, and community feedback. MBFC adds a factual reporting scale and flags specific rhetorical techniques as named evidence categories. The table below states how each rubric dimension maps from those methodologies into `SpinEstimator`.
 
-| Feature | Reference Product | Situation Monitor | Status |
+| Rubric dimension | AllSides methodology | MBFC outlet-rating usage | Situation Monitor operationalisation |
 |---|---|---|---|
-| FX rate display | Bloomberg: real-time streaming FX cross-rates for 170+ currency pairs with bid/ask spread, daily range, and historical charts. Tiingo CLI: intraday and end-of-day FX for major pairs via `tiingo fx` | `practical.py` `fetch_practical_movers()`: ECB `eurofxref-daily.xml` for EUR/USD daily reference rate; change expressed relative to a 1.10 baseline; exposed at `/api/practical` | Gap — Bloomberg/Tiingo cover 170+ pairs with real-time streaming; Situation Monitor covers EUR/USD daily via a free public XML feed |
-| Commodity price display | Bloomberg: real-time streaming prices for the full commodity complex (crude benchmarks, nat gas, metals, agricultural). Tiingo CLI: end-of-day commodity futures via the Tiingo API | `fetch_practical_movers()`: Yahoo Finance RSS headline-parsed percentage change for WTI crude (`CL=F`) and Gold (`GC=F`) | Gap — Bloomberg/Tiingo cover the full commodity complex in real time; Situation Monitor covers two instruments via RSS headline parsing |
-| Regulatory and political news movers | Bloomberg: dedicated "Government" and "Regulation" news channels; analysts tag stories with affected tickers for direct price-news correlation. Tiingo CLI: news headlines via Tiingo API tagged with tickers | `fetch_regulatory_movers()`: top-5 items from Reuters Politics and AP Politics RSS; each mover has `direction`, `who_it_affects`, and `what_to_watch` fields; exposed at `/api/practical` | Parity — Situation Monitor delivers the same three-column context (direction / who / what to watch) as a terminal regulatory-mover row, sourced from the same Reuters and AP wire feeds |
-| News-market correlation view | Bloomberg: top panel shows macro backdrop (FX, rates, oil, equities indices) alongside the news ticker in a single screen; analysts can click a headline to see the price reaction | Dashboard (`edge serve`): practical movers rendered beneath each dual-lens event card, correlating a specific story with the same-cycle FX and commodity moves | Parity — Situation Monitor replicates the layout pattern (macro backdrop + news headline in one view) using free public data |
-| Data refresh rate | Bloomberg: real-time streaming (sub-second tick data). Tiingo CLI: intraday (1-minute bars via WebSocket or polling) | `edge run` polls every `poll_interval_seconds` (default 600 s); ECB FX reference rate is published once daily | Gap — Bloomberg/Tiingo stream tick-by-tick; Situation Monitor is a polling system on a configurable interval |
-| Asset universe breadth | Bloomberg: equities, fixed income, FX, commodities, derivatives, crypto, private markets — effectively the full global asset universe. Tiingo: US equities, ETFs, mutual funds, FX, crypto, news | Three instruments (EUR/USD, WTI crude, Gold) plus Reuters/AP regulatory headlines; no equities, no bonds, no derivatives | Gap — intentional scope narrowing; Situation Monitor provides macro backdrop context only, not portfolio analytics |
-| Cost and access model | Bloomberg: ~$25 000/year terminal licence. Tiingo CLI: free tier (5 000 API calls/day); paid tiers for higher limits and intraday data | Self-hosted open-source; all data sources are free public feeds (ECB, Yahoo Finance RSS, Reuters RSS, AP RSS); no API key required for default configuration | Exceeds — zero marginal cost; no account or licence required; data stays local |
-| Analyst research and ratings | Bloomberg: integrated analyst consensus, price targets, earnings estimates, and sector-level research | Not implemented; Situation Monitor covers editorial framing and market movers, not financial research | Gap — out of scope for Situation Monitor's design goals |
+| Loaded language | Editorial reviewers flag emotionally charged headlines as evidence for a bias rating; no automated per-article score | "Loaded Headline / Story" flag applied during outlet review; marks outlets that habitually use charged vocabulary | `loaded_language` score (0–1): LLM matches charged words against a synonym list per article; contributes to `spin_pct`; stored as a rubric receipt |
+| Omission | "Missing Context" is one of four named evidence categories; editors cite specific omissions when rating an outlet | Factual-reporting deductions for absent data or selective framing; applied at outlet level | `omission` score (0–1): LLM flags absent opposing views, missing data, or single-source claims on multi-actor events; scored per article in real time |
+| Sourcing asymmetry | Editorial-balance criterion: credentialled experts quoted for both sides; assessed at outlet level over time | No named category; may inform the factual-reporting rating holistically | `sourcing_asymmetry` score (0–1): LLM checks whether expert or official quotes favour only one side within a single article |
+| Emotional framing | No named rubric category; emotional or sensationalist content informs the editorial review holistically | "Propaganda / Emotional" category flagged during outlet review; marks outlets that routinely use emotional appeals | `emotional_framing` score (0–1): LLM flags personalised victim/hero narratives, rhetorical questions, fear/triumph sequencing before evidence |
+
+---
+
+### Market layer vs terminal dashboard
+
+Bloomberg Terminal is a professional financial platform with real-time streaming prices across the full asset universe, a news ticker, regulatory filings, and analyst research. The table below compares the three core terminal-layer dimensions — data freshness, instruments covered, and actionability output format — against Situation Monitor's `practical.py`.
+
+| Dimension | Bloomberg Terminal | Situation Monitor | Parity |
+|---|---|---|---|
+| Data freshness | Real-time streaming tick data; sub-second update latency | ECB FX published once daily; commodities and regulatory items fetched every `poll_interval_seconds` (default 600 s) | partial |
+| FX instruments covered | 170+ currency pairs with real-time bid/ask, daily range, and historical charts | EUR/USD daily reference rate only (ECB `eurofxref-daily.xml`; change vs 1.10 baseline) | partial |
+| Oil instruments covered | Full crude complex: WTI, Brent, nat gas, and refined products in real time | WTI Crude (`CL=F`) via Yahoo Finance RSS headline-parsed percentage change | partial |
+| Regulatory events coverage | Dedicated Government/Regulation channels; stories tagged with affected tickers for direct price-news correlation | Top-5 Reuters Politics and AP Politics RSS items per cycle; each annotated with `direction`, `who_it_affects`, `what_to_watch` | meets |
+| Actionability output format | Price moves, analyst ratings, earnings estimates, and price targets per instrument | `PracticalMover` objects: `direction`, `who_it_affects`, `what_to_watch`; rendered beneath dual-lens event cards on the dashboard | meets |
+| Cost model | ~$25 000/year terminal licence | Free; all sources are public feeds (ECB, Yahoo Finance RSS, Reuters RSS, AP RSS); no API key required | exceeds |
 
 ---
 
