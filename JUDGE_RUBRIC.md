@@ -33,3 +33,4 @@ Binary checklist. Mark each row PASS or FAIL. All criteria are observable withou
 - PASS daily digest formats and sends Telegram notification — situation_monitor/digest.py:daily_digest
 - PASS dashboard make_app returns WSGI-compatible Flask app — situation_monitor/dashboard.py:make_app
 - PASS ingest-and-enrich runs all source defs, returns articles — situation_monitor/__main__.py:_ingest_and_enrich
+- PASS alert check emits alerts for high-relevance articles above threshold — situation_monitor/alerting.py:check_and_emit_alerts
