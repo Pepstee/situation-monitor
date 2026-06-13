@@ -15,6 +15,22 @@ class SourceReliability(enum.Enum):
     UNKNOWN = "unknown"
 
 
+class Domain(enum.Enum):
+    WORLD = "world"
+    MARKETS = "markets"
+    AI = "ai"
+
+
+@dataclass
+class SpinResult:
+    spin_pct: float
+    lens: str
+    rubric: dict[str, float]
+    receipts: str
+    hype_vs_substance: Optional[float] = None
+    vendor_pr: Optional[bool] = None
+
+
 @dataclass
 class Article:
     url: str
@@ -33,6 +49,7 @@ class Article:
     loaded_language: bool = False
     propaganda_flag: bool = False
     polymarket_odds: Optional[float] = None
+    domain: Optional[Domain] = None
 
     def __post_init__(self) -> None:
         if not self.url:
