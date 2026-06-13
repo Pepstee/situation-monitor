@@ -8,6 +8,69 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from situation_monitor.models import Domain
+
+
+@dataclass
+class SourceDef:
+    url: str
+    name: str
+    domain: Domain
+    lens: str
+    description: str = ""
+
+
+DEFAULT_SOURCE_DEFS: list[SourceDef] = [
+    # WORLD — left
+    SourceDef("https://www.theguardian.com/world/rss", "The Guardian World", Domain.WORLD, "left", "Left-liberal UK broadsheet world coverage"),
+    SourceDef("https://www.democracynow.org/democracynow.rss", "Democracy Now", Domain.WORLD, "left", "Progressive US independent news"),
+    SourceDef("https://www.aljazeera.com/xml/rss/all.xml", "Al Jazeera", Domain.WORLD, "left", "Qatar-based international news network"),
+    # WORLD — right
+    SourceDef("https://feeds.foxnews.com/foxnews/world", "Fox News World", Domain.WORLD, "right", "Conservative US cable news world section"),
+    SourceDef("https://feeds.feedburner.com/breitbart", "Breitbart", Domain.WORLD, "right", "Right-nationalist US news aggregator"),
+    SourceDef("https://www.washingtontimes.com/rss/headlines/news/world/", "Washington Times World", Domain.WORLD, "right", "Conservative US daily world coverage"),
+    # WORLD — centre
+    SourceDef("https://feeds.bbci.co.uk/news/world/rss.xml", "BBC World", Domain.WORLD, "centre", "British public broadcaster world news"),
+    SourceDef("https://feeds.reuters.com/Reuters/worldNews", "Reuters World", Domain.WORLD, "centre", "Global wire service world feed"),
+    SourceDef("https://feeds.npr.org/1004/rss.xml", "NPR World", Domain.WORLD, "centre", "US public radio world coverage"),
+    # WORLD — state
+    SourceDef("https://www.rt.com/rss/", "RT", Domain.WORLD, "state", "Russian state-funded international broadcaster"),
+    SourceDef("https://tass.com/rss/v2.xml", "TASS", Domain.WORLD, "state", "Russian state news agency"),
+    SourceDef("http://www.xinhuanet.com/english/rss/worldnews.xml", "Xinhua World", Domain.WORLD, "state", "Chinese state news agency world feed"),
+    # MARKETS — left
+    SourceDef("https://www.thenation.com/subject/economy/feed/", "The Nation Economy", Domain.MARKETS, "left", "Progressive US political magazine economy section"),
+    SourceDef("https://www.commondreams.org/rss.xml", "Common Dreams", Domain.MARKETS, "left", "Progressive US news and opinion"),
+    SourceDef("https://inthesetimes.com/feeds/recent_stories.rss", "In These Times", Domain.MARKETS, "left", "Independent US socialist magazine"),
+    # MARKETS — right
+    SourceDef("https://www.cnbc.com/id/100003114/device/rss/rss.html", "CNBC Markets", Domain.MARKETS, "right", "US business cable network markets feed"),
+    SourceDef("https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch", Domain.MARKETS, "right", "Dow Jones market news and analysis"),
+    SourceDef("https://www.investors.com/category/market-trend/stock-market-today/feed/", "Investor's Business Daily", Domain.MARKETS, "right", "Equity-focused conservative market coverage"),
+    # MARKETS — centre
+    SourceDef("https://feeds.reuters.com/reuters/businessNews", "Reuters Business", Domain.MARKETS, "centre", "Reuters wire service business feed"),
+    SourceDef("https://finance.yahoo.com/news/rssindex", "Yahoo Finance", Domain.MARKETS, "centre", "Aggregated financial news headlines"),
+    SourceDef("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "NYT Business", Domain.MARKETS, "centre", "New York Times business section"),
+    # MARKETS — state
+    SourceDef("https://www.rt.com/rss/business/", "RT Business", Domain.MARKETS, "state", "Russian state broadcaster business feed"),
+    SourceDef("http://en.people.cn/rss/90778.xml", "People's Daily Economy", Domain.MARKETS, "state", "Chinese Communist Party organ economy feed"),
+    SourceDef("https://www.chinadaily.com.cn/rss/bizchina_rss.xml", "China Daily Business", Domain.MARKETS, "state", "Chinese state English-language business"),
+    # AI — left
+    SourceDef("https://www.eff.org/rss/updates.xml", "EFF Updates", Domain.AI, "left", "Electronic Frontier Foundation civil-liberties tech coverage"),
+    SourceDef("https://algorithmwatch.org/en/feed/", "AlgorithmWatch", Domain.AI, "left", "Critical algorithmic-accountability journalism"),
+    SourceDef("https://theintercept.com/feed/?rss", "The Intercept Tech", Domain.AI, "left", "Investigative left-leaning tech and surveillance coverage"),
+    # AI — right
+    SourceDef("https://reason.com/feed/", "Reason", Domain.AI, "right", "Libertarian magazine — pro-market tech and AI policy"),
+    SourceDef("https://www.forbes.com/technology/feed/", "Forbes Tech", Domain.AI, "right", "Business-conservative US tech and AI news"),
+    SourceDef("https://www.washingtonexaminer.com/tag/technology/feed/", "Washington Examiner Tech", Domain.AI, "right", "Conservative US political outlet tech section"),
+    # AI — centre
+    SourceDef("https://feeds.arstechnica.com/arstechnica/index", "Ars Technica", Domain.AI, "centre", "In-depth tech journalism and AI coverage"),
+    SourceDef("https://www.technologyreview.com/feed/", "MIT Technology Review", Domain.AI, "centre", "MIT-affiliated technology and AI research journalism"),
+    SourceDef("https://venturebeat.com/feed/", "VentureBeat", Domain.AI, "centre", "Enterprise AI and tech startup news"),
+    # AI — state
+    SourceDef("https://www.rt.com/rss/technology/", "RT Technology", Domain.AI, "state", "Russian state broadcaster technology feed"),
+    SourceDef("https://www.globaltimes.cn/rss/outbrain.xml", "Global Times", Domain.AI, "state", "Chinese state-backed English tabloid"),
+    SourceDef("https://www.cgtn.com/subscribe/rss/section/sci-tech.xml", "CGTN Sci-Tech", Domain.AI, "state", "Chinese state television science and tech feed"),
+]
+
 
 @dataclass
 class Config:
@@ -27,6 +90,9 @@ class Config:
     polymarket_slugs: list[str] = field(default_factory=list)
     dashboard_port: int = 8080
     topics: list[str] = field(default_factory=list)
+    source_defs: list[SourceDef] = field(default_factory=lambda: list(DEFAULT_SOURCE_DEFS))
+    telegram_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
 
     def __repr__(self) -> str:
         return (
@@ -82,4 +148,8 @@ class Config:
             kwargs["polymarket_markets"] = [s.strip() for s in v.split(",") if s.strip()]
         if (v := os.environ.get("SM_POLYMARKET_SLUGS")):
             kwargs["polymarket_slugs"] = [s.strip() for s in v.split(",") if s.strip()]
+        if (v := os.environ.get("SM_TELEGRAM_TOKEN")):
+            kwargs["telegram_token"] = v
+        if (v := os.environ.get("SM_TELEGRAM_CHAT_ID")):
+            kwargs["telegram_chat_id"] = v
         return cls(**kwargs)
