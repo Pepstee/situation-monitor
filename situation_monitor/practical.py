@@ -84,8 +84,12 @@ def fetch_practical_movers(client: HttpClient | None = None) -> list[PracticalMo
     """Fetch live FX and commodity movers from free public RSS/JSON feeds."""
     http = _client(client)
     movers: list[PracticalMover] = []
+    attempts = 0
+    failures = 0
+    last_error: Exception | None = None
 
     # --- ECB EUR/USD reference rate (XML) ---
+    attempts += 1
     try:
         raw = http.get("https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml")
         root = ET.fromstring(raw)
@@ -110,8 +114,9 @@ def fetch_practical_movers(client: HttpClient | None = None) -> list[PracticalMo
                         ))
                     except ValueError:
                         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        failures += 1
+        last_error = exc
 
     # --- Yahoo Finance RSS for oil and gold ---
     for symbol, name, affects, watch, url in [
@@ -122,6 +127,7 @@ def fetch_practical_movers(client: HttpClient | None = None) -> list[PracticalMo
          "USD strength, inflation expectations, geopolitical risk",
          _YAHOO_GOLD_URL),
     ]:
+        attempts += 1
         try:
             raw = http.get(url)
             items = _parse_rss_items(raw)
@@ -136,8 +142,14 @@ def fetch_practical_movers(client: HttpClient | None = None) -> list[PracticalMo
                     what_to_watch=watch,
                     source_url=link or url,
                 ))
-        except Exception:
-            pass
+        except Exception as exc:
+            failures += 1
+            last_error = exc
+
+    # A total outage (every source failed) must propagate, not masquerade as
+    # "no movers"; a partial failure degrades gracefully.
+    if attempts > 0 and failures == attempts and last_error is not None:
+        raise last_error
 
     return movers
 
@@ -146,6 +158,9 @@ def fetch_regulatory_movers(client: HttpClient | None = None) -> list[PracticalM
     """Fetch significant government/regulatory news from free RSS feeds."""
     http = _client(client)
     movers: list[PracticalMover] = []
+    attempts = 0
+    failures = 0
+    last_error: Exception | None = None
 
     feeds = [
         (_REUTERS_GOV_URL, "Reuters Politics"),
@@ -153,6 +168,7 @@ def fetch_regulatory_movers(client: HttpClient | None = None) -> list[PracticalM
     ]
 
     for url, source_name in feeds:
+        attempts += 1
         try:
             raw = http.get(url)
             items = _parse_rss_items(raw)
@@ -166,7 +182,13 @@ def fetch_regulatory_movers(client: HttpClient | None = None) -> list[PracticalM
                     what_to_watch="Legislative calendar, agency announcements, court rulings",
                     source_url=link,
                 ))
-        except Exception:
-            pass
+        except Exception as exc:
+            failures += 1
+            last_error = exc
+
+    # A total outage (every feed failed) must propagate, not masquerade as
+    # "no movers"; a partial failure degrades gracefully.
+    if attempts > 0 and failures == attempts and last_error is not None:
+        raise last_error
 
     return movers
