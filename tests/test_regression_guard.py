@@ -14,7 +14,9 @@ from __future__ import annotations
 import importlib
 import io
 import json
+import os
 import subprocess
+import sys
 import textwrap
 import urllib.parse
 from datetime import datetime
@@ -25,6 +27,13 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+THIS_FILE = Path(__file__).name
+# Sibling files that also spawn a pytest subprocess — exclude all to break cycles.
+_PYTEST_META_FILES = [
+    THIS_FILE,
+    "test_pytest_acceptance_regression.py",
+    "test_independent_subprocess_guard.py",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -1202,3 +1211,136 @@ class TestDashboardAPIEndpoints:
             data = json.loads(c.get("/api/events/0/rationale").data)
         assert "event_title" in data
         assert data["event_title"] == belfast_events[0].event_title
+
+
+# ---------------------------------------------------------------------------
+# 17. Subprocess regression guard — pytest + acceptance run independently
+# ---------------------------------------------------------------------------
+
+
+def _stub_env() -> dict[str, str]:
+    """Force stub LLM and fixture sources — no live network calls."""
+    return {
+        **os.environ,
+        "SM_LLM_BACKEND": "stub",
+        "SM_SOURCES": "tests/fixtures/rss_sample.xml",
+    }
+
+
+@pytest.fixture(scope="module")
+def _pytest_subprocess_result() -> subprocess.CompletedProcess:
+    """Run pytest as a subprocess, excluding all files that themselves spawn pytest."""
+    ignore_flags = []
+    for fname in _PYTEST_META_FILES:
+        ignore_flags += [f"--ignore=tests/{fname}"]
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", *ignore_flags, "-q", "--tb=short"],
+        capture_output=True,
+        cwd=PROJECT_ROOT,
+        env=_stub_env(),
+        timeout=240,
+    )
+
+
+@pytest.fixture(scope="module")
+def _acceptance_subprocess_result() -> subprocess.CompletedProcess:
+    """Execute the acceptance script via subprocess — same mechanism as CI."""
+    cmd = ACCEPTANCE_FILE.read_text().strip()
+    return subprocess.run(
+        cmd,
+        shell=True,
+        capture_output=True,
+        timeout=90,
+        cwd=PROJECT_ROOT,
+    )
+
+
+class TestPytestAsSubprocess:
+    """pytest must exit 0 when run as an independent subprocess."""
+
+    def test_pytest_subprocess_exits_zero(
+        self, _pytest_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        r = _pytest_subprocess_result
+        assert r.returncode == 0, (
+            f"pytest subprocess exited {r.returncode}; expected 0.\n"
+            f"stdout tail:\n{r.stdout.decode(errors='replace')[-2000:]}\n"
+            f"stderr tail:\n{r.stderr.decode(errors='replace')[-500:]}"
+        )
+
+    def test_pytest_subprocess_collects_at_least_100_tests(
+        self, _pytest_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        output = _pytest_subprocess_result.stdout.decode(errors="replace")
+        import re
+        matches = re.findall(r"(\d+) passed", output)
+        count = int(matches[-1]) if matches else 0
+        assert count >= 100, (
+            f"Expected at least 100 tests to pass; got {count}.\n"
+            f"Output tail:\n{output[-1000:]}"
+        )
+
+    def test_pytest_subprocess_no_failures(
+        self, _pytest_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        output = _pytest_subprocess_result.stdout.decode(errors="replace")
+        assert "failed" not in output.lower() or _pytest_subprocess_result.returncode == 0, (
+            f"Failure lines detected in pytest output.\n{output[-2000:]}"
+        )
+
+    def test_pytest_subprocess_no_collection_errors(
+        self, _pytest_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        combined = (
+            _pytest_subprocess_result.stdout.decode(errors="replace")
+            + _pytest_subprocess_result.stderr.decode(errors="replace")
+        )
+        assert "ERROR collecting" not in combined, (
+            f"Collection errors found in pytest output:\n{combined[:2000]}"
+        )
+
+
+class TestAcceptanceAsSubprocess:
+    """Acceptance script must exit 0 and emit the required output contracts."""
+
+    def test_acceptance_subprocess_exits_zero(
+        self, _acceptance_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        r = _acceptance_subprocess_result
+        assert r.returncode == 0, (
+            f"Acceptance script subprocess exited {r.returncode}; expected 0.\n"
+            f"stdout: {r.stdout.decode(errors='replace')[:1000]}\n"
+            f"stderr: {r.stderr.decode(errors='replace')[:500]}"
+        )
+
+    def test_acceptance_subprocess_contains_situation_monitor(
+        self, _acceptance_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        out = _acceptance_subprocess_result.stdout.decode(errors="replace")
+        assert "Situation Monitor" in out, (
+            "Acceptance subprocess stdout must contain 'Situation Monitor'"
+        )
+
+    def test_acceptance_subprocess_contains_dual_lens_header(
+        self, _acceptance_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        out = _acceptance_subprocess_result.stdout.decode(errors="replace")
+        assert "DUAL-LENS EVENTS" in out, (
+            "Acceptance subprocess stdout must contain '## DUAL-LENS EVENTS' header"
+        )
+
+    def test_acceptance_subprocess_no_traceback(
+        self, _acceptance_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        out = _acceptance_subprocess_result.stdout.decode(errors="replace")
+        assert "Traceback" not in out, (
+            "Acceptance subprocess stdout must not contain a Python traceback"
+        )
+
+    def test_acceptance_subprocess_contains_spin_pct(
+        self, _acceptance_subprocess_result: subprocess.CompletedProcess
+    ) -> None:
+        out = _acceptance_subprocess_result.stdout.decode(errors="replace")
+        assert "spin_pct:" in out, (
+            "Acceptance subprocess stdout must contain 'spin_pct:' per-article spin annotation"
+        )
