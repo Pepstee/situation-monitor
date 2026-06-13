@@ -2,6 +2,10 @@
 
 Autonomous RSS + news ingest pipeline with bias scoring, propaganda detection, dual-lens event clustering, spin estimation, Polymarket odds matching, a practical market layer, and a live web dashboard.
 
+## Capability Summary
+
+Situation Monitor **exceeds** Ground News on per-article spin scoring and explainability (Ground News shows a coverage-spread bar only; Situation Monitor adds quantified rubric scores and a machine-readable audit trail per article). It **meets** AllSides on bias methodology by operationalising AllSides' editorial-balance criteria into four automated rubrics — loaded language, omission, sourcing asymmetry, and emotional framing — scored per article in real time. It achieves **partial parity** with Bloomberg Terminal on market data (ECB FX, Yahoo Finance commodities, Reuters/AP regulatory headlines vs. real-time streaming across 170+ instruments) while **exceeding** it on cost (free public feeds vs. ~$25 000/year licence).
+
 ## Quick start
 
 ```bash
@@ -261,14 +265,14 @@ The rationale endpoint (`/api/events/<id>/rationale`) exposes the full per-artic
 
 Ground News (ground.news) is a commercial service that shows per-story political coverage spread, side-by-side headline comparison across the left/centre/right spectrum, and blind-spot alerts when a story is covered by only one wing. The table below maps five core feature dimensions to their Situation Monitor equivalents.
 
-| Feature | Ground News | Situation Monitor | Parity | Justification |
+| Feature | Ground News | Situation Monitor | Verdict | Justification |
 |---|---|---|---|---|
-| Lens comparison | Colour-coded bar showing count of left / centre / right outlets per story; top headline from one source per side | `dual_lens.py` left/right/centre bucket lists per `DualLensEvent`; all bucketed article titles rendered side-by-side with `spin_pct` per article in the dashboard | exceeds | Shows all bucketed articles, not just one headline per side; adds a per-article spin score absent from Ground News |
-| Spin measurement | No framing or spin score; coverage-spread bar only | `SpinEstimator`: `spin_pct` (0–100) per article; `spin_delta` per event; full four-rubric breakdown at `/api/events/<id>/rationale` | exceeds | Quantified framing layer absent from Ground News; machine-readable rubric receipts enable third-party auditing |
-| Source balance config | Proprietary outlet index; no user-configurable source list | Sources defined via `SM_SOURCES` env var or JSON config; any RSS feed assignable to any lens | meets | Same configurability intent delivered through an open, editable config rather than a closed proprietary index |
-| Breaking alerts | Push notifications on mobile app when a story becomes a blind spot or breaks above a coverage threshold | Telegram delivery via `SM_TELEGRAM_TOKEN` / `SM_TELEGRAM_CHAT_ID` when relevance exceeds `SM_ALERT_THRESHOLD` | meets | Same alert-on-threshold pattern; Situation Monitor uses Telegram rather than a proprietary push channel |
-| Explainability | No rubric or reasoning exposed; colour bar only | Per-article rubric scores (`loaded_language`, `omission`, `sourcing_asymmetry`, `emotional_framing`) at `/api/events/<id>/rationale` | exceeds | Explicit machine-readable audit trail per article; Ground News provides no explanation of why a story is labelled divergent |
-| Access model | Freemium web app; full features require a paid subscription | Self-hosted open-source CLI and dashboard; no paywall, no account required, data stays local | exceeds | Zero marginal cost and full feature access without a licence |
+| Lens comparison | Colour-coded bar showing count of left / centre / right outlets per story; top headline from one source per side | `dual_lens.py` left/right/centre bucket lists per `DualLensEvent`; all bucketed article titles rendered side-by-side with `spin_pct` per article in the dashboard | Exceeds | Shows all bucketed articles, not just one headline per side; adds a per-article spin score absent from Ground News |
+| Spin measurement | No framing or spin score; coverage-spread bar only | `SpinEstimator`: `spin_pct` (0–100) per article; `spin_delta` per event; full four-rubric breakdown at `/api/events/<id>/rationale` | Exceeds | Quantified framing layer absent from Ground News; machine-readable rubric receipts enable third-party auditing |
+| Source balance config | Proprietary outlet index; no user-configurable source list | Sources defined via `SM_SOURCES` env var or JSON config; any RSS feed assignable to any lens | Meets | Same configurability intent delivered through an open, editable config rather than a closed proprietary index |
+| Breaking alerts | Push notifications on mobile app when a story becomes a blind spot or breaks above a coverage threshold | Telegram delivery via `SM_TELEGRAM_TOKEN` / `SM_TELEGRAM_CHAT_ID` when relevance exceeds `SM_ALERT_THRESHOLD` | Meets | Same alert-on-threshold pattern; Situation Monitor uses Telegram rather than a proprietary push channel |
+| Explainability | No rubric or reasoning exposed; colour bar only | Per-article rubric scores (`loaded_language`, `omission`, `sourcing_asymmetry`, `emotional_framing`) at `/api/events/<id>/rationale` | Exceeds | Explicit machine-readable audit trail per article; Ground News provides no explanation of why a story is labelled divergent |
+| Access model | Freemium web app; full features require a paid subscription | Self-hosted open-source CLI and dashboard; no paywall, no account required, data stays local | Exceeds | Zero marginal cost and full feature access without a licence |
 
 ---
 
