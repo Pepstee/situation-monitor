@@ -4,3 +4,4 @@
 SM_LLM_BACKEND=offline SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor once --config tests/fixtures/acceptance_source_defs.json
 SM_LLM_BACKEND=offline SM_SOURCES=tests/fixtures/rss_sample.xml python3 -m situation_monitor digest-dry-run --config tests/fixtures/acceptance_source_defs.json
 SM_LLM_BACKEND=offline SM_CARRIER_FEEDS='[{"url":"tests/fixtures/rss_carrier.xml","country":"US","lean":"centre"}]' python3 -m situation_monitor once --config tests/fixtures/acceptance_source_defs.json | grep "^discourse-carrier"
+SM_LLM_BACKEND=offline python3 check_server.py
