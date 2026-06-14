@@ -19,6 +19,7 @@ from situation_monitor.bias import get_source_lean, get_source_reliability
 from situation_monitor.config import Config
 from situation_monitor.dashboard import make_app
 from situation_monitor.dedup import deduplicate
+from situation_monitor.domains import classify_domain
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
 from situation_monitor.ingestion.github_trending import GitHubTrendingFetcher
 from situation_monitor.ingestion.hn import HNFetcher
@@ -163,6 +164,14 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
             print(f"Warning: failed to fetch {source!r}: {exc}", file=sys.stderr)
 
     articles = deduplicate(articles)
+
+    # Classify each surviving article into its section by CONTENT, not just by the
+    # feed it arrived on. URL-dedup keeps one copy of a story shared across feeds;
+    # content classification then files that survivor under the right domain
+    # (a Bitcoin story → MARKETS, an AI story → AI) instead of inheriting whichever
+    # feed happened to win dedup. Feed-declared domain remains the fallback.
+    for article in articles:
+        article.domain = classify_domain(article, default=article.domain)
 
     llm = get_llm_client(config)
 
