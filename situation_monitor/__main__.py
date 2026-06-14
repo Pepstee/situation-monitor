@@ -21,6 +21,7 @@ from situation_monitor.dashboard import make_app
 from situation_monitor.dedup import deduplicate
 from situation_monitor.domains import classify_domain
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
+from situation_monitor.ingestion.discourse_carrier import CarrierDef, DiscourseCarrierFetcher
 from situation_monitor.ingestion.github_trending import GitHubTrendingFetcher
 from situation_monitor.ingestion.hn import HNFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
@@ -112,6 +113,22 @@ def _select_fetcher(source: str, client=None):
     return RSSFetcher(client=client)
 
 
+def _resolve_carrier_roster() -> list[CarrierDef]:
+    """Parse SM_CARRIER_FEEDS (JSON array of {url,country,lean}) into a roster.
+
+    Returns an empty list when the env var is unset, so existing pipelines and
+    tests are unaffected unless carrier feeds are explicitly configured.
+    """
+    v = os.environ.get("SM_CARRIER_FEEDS")
+    if not v:
+        return []
+    try:
+        entries = json.loads(v)
+        return [CarrierDef(url=e["url"], country=e["country"], lean=e["lean"]) for e in entries]
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Polymarket markets loader
 # ---------------------------------------------------------------------------
@@ -171,6 +188,17 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
             articles.extend(fetched)
         except Exception as exc:
             print(f"Warning: failed to fetch {source!r}: {exc}", file=sys.stderr)
+
+    # Discourse carrier feeds — stamped with country + lean, merged before dedup
+    for carrier in _resolve_carrier_roster():
+        try:
+            client = None if _is_url(carrier.url) else _LocalFileClient()
+            fetcher = DiscourseCarrierFetcher(roster=[carrier], client=client)
+            fetched = fetcher.fetch()
+            tracker.record_fetch(carrier.url, len(fetched))
+            articles.extend(fetched)
+        except Exception as exc:
+            print(f"Warning: carrier feed {carrier.url!r}: {exc}", file=sys.stderr)
 
     articles = deduplicate(articles)
 
@@ -348,6 +376,9 @@ def _print_dual_lens(events: list) -> None:
 def _cmd_once(config: Config) -> None:
     from situation_monitor.dual_lens import group_by_event
     articles = _ingest_and_enrich(config)
+    carrier_count = sum(1 for a in articles if "carrier" in a.tags)
+    if carrier_count:
+        print(f"discourse-carrier articles: {carrier_count}")
     check_and_emit_alerts(articles, config.alert_threshold)
     _print_markdown(articles)
     _print_dual_lens(group_by_event(articles))

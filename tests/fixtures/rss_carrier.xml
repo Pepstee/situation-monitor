@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Carrier Test Feed</title>
+    <link>http://carrier.example.com</link>
+    <description>Carrier RSS fixture for acceptance tests</description>
+    <item>
+      <title>Diplomatic Summit Reaches New Agreement</title>
+      <link>http://carrier.example.com/diplomatic-summit</link>
+      <description>World leaders gather in Geneva to sign a landmark diplomatic agreement on trade.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Foreign Policy Shift Announced by Government</title>
+      <link>http://carrier.example.com/foreign-policy-shift</link>
+      <description>Government announces major shift in foreign policy stance affecting regional relations.</description>
+      <pubDate>Tue, 02 Jan 2024 09:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
