@@ -1,22 +1,22 @@
 {
   "tests/fixtures/rss_left.xml": [
-    1104,
-    1104
+    1265,
+    1265
   ],
   "tests/fixtures/rss_right.xml": [
-    1104,
-    1104
+    1265,
+    1265
   ],
   "tests/fixtures/rss_sample.xml": [
-    4335,
-    8670
+    4967,
+    9934
   ],
   "/home/gutua/agentic-orchestrator/projects/.worktrees/edge_9dd26d5d4250/tests/fixtures/rss_sample.xml": [
     297,
     594
   ],
   "/home/gutua/agentic-orchestrator/projects/edge/tests/fixtures/rss_sample.xml": [
-    24,
-    48
+    72,
+    144
   ]
 }
