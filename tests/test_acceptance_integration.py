@@ -1,13 +1,16 @@
-"""Subprocess regression guard for all three acceptance commands plus the test suite.
+"""Subprocess regression guard for all three acceptance commands.
 
 Verifies:
-  1. pytest (fast unit tests, excluding this file and slow acceptance runners) exits 0
-  2. ``once`` subprocess exits 0; stdout contains ``DUAL-LENS EVENTS`` and ``spin_pct``
-  3. ``digest-dry-run`` subprocess exits 0; stdout contains ``Situation Monitor``
-  4. Carrier ``once`` subprocess stdout contains ``discourse-carrier``
+  1. ``once`` subprocess exits 0; stdout contains ``DUAL-LENS EVENTS`` and ``spin_pct``
+  2. ``digest-dry-run`` subprocess exits 0; stdout contains ``Situation Monitor``
+  3. Carrier ``once`` subprocess stdout contains ``discourse-carrier``
 
 All commands are launched via ``sys.executable``, never a bare shell string, so a
 failure in any one subprocess is independently observable.
+
+This file deliberately does NOT re-run ``pytest tests/`` as a subprocess: that the
+rest of the suite passes is its own evidence, and a recursive run only doubles
+wall-clock time and risks the gate's timeout (see project memory).
 """
 
 from __future__ import annotations
@@ -26,20 +29,6 @@ FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_SOURCE_DEFS = FIXTURES / "acceptance_source_defs.json"
 RSS_FIXTURE = FIXTURES / "rss_sample.xml"
 RSS_CARRIER = FIXTURES / "rss_carrier.xml"
-THIS_FILE = Path(__file__).relative_to(PROJECT_ROOT)
-
-# Acceptance-style test files that spawn their own subprocesses — exclude them from
-# the recursive pytest run so the suite doesn't double-execute slow acceptance commands.
-_SLOW_ACCEPTANCE_IGNORES = [
-    str(THIS_FILE),
-    "tests/test_acceptance.py",
-    "tests/test_acceptance_dual_lens.py",
-    "tests/test_acceptance_each_cmd.py",
-    "tests/test_final_regression_guard.py",
-    "tests/test_bias_propaganda_acceptance.py",
-    "tests/test_regression_guard_fixture_split.py",
-    "tests/situation_monitor/test_acceptance_belfast.py",
-]
 
 
 # ---------------------------------------------------------------------------
@@ -60,32 +49,6 @@ def _offline_env(**extra: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Module-scoped fixtures — each subprocess runs exactly once per test session
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def pytest_result() -> subprocess.CompletedProcess:
-    """Run the project's fast unit tests as an isolated subprocess.
-
-    Acceptance-heavy files (which each spawn multiple subprocesses of their
-    own) are excluded to keep the recursive run practical; they are covered
-    by the three acceptance command tests below.
-    """
-    ignore_flags = [f"--ignore={p}" for p in _SLOW_ACCEPTANCE_IGNORES]
-    return subprocess.run(
-        [
-            sys.executable,
-            "-m", "pytest",
-            "tests/",
-            *ignore_flags,
-            "-x",
-            "-q",
-            "--tb=short",
-        ],
-        capture_output=True,
-        cwd=PROJECT_ROOT,
-        env={**os.environ},
-        timeout=300,
-    )
 
 
 @pytest.fixture(scope="module")
@@ -212,52 +175,6 @@ class TestFixturePrerequisites:
 # ---------------------------------------------------------------------------
 # 1. pytest subprocess — fast unit tests must still pass
 # ---------------------------------------------------------------------------
-
-
-class TestPytestRegression:
-    """The project's fast unit tests must all pass (exit 0) in a subprocess."""
-
-    def test_pytest_exits_zero(self, pytest_result: subprocess.CompletedProcess) -> None:
-        assert pytest_result.returncode == 0, (
-            f"pytest subprocess exited {pytest_result.returncode}; unit tests are broken.\n"
-            f"stdout tail:\n{pytest_result.stdout.decode(errors='replace')[-4000:]}\n"
-            f"stderr tail:\n{pytest_result.stderr.decode(errors='replace')[-500:]}"
-        )
-
-    def test_pytest_ran_tests(self, pytest_result: subprocess.CompletedProcess) -> None:
-        stdout = pytest_result.stdout.decode(errors="replace")
-        assert "passed" in stdout, (
-            "pytest output must contain 'passed'; no tests were collected or all were skipped.\n"
-            f"stdout sample:\n{stdout[:2000]}"
-        )
-
-    def test_pytest_no_errors_in_collection(
-        self, pytest_result: subprocess.CompletedProcess
-    ) -> None:
-        stdout = pytest_result.stdout.decode(errors="replace")
-        assert "error" not in stdout.lower() or pytest_result.returncode == 0, (
-            "pytest output contains 'error' and exited non-zero; check collection errors."
-        )
-
-    def test_pytest_invoked_via_sys_executable(
-        self, pytest_result: subprocess.CompletedProcess
-    ) -> None:
-        args = pytest_result.args
-        assert isinstance(args, list), "pytest must be launched as an args list"
-        assert args[0] == sys.executable, (
-            f"pytest args[0] must be sys.executable ({sys.executable!r}); "
-            f"got {args[0]!r}"
-        )
-
-    def test_pytest_ignores_this_file(
-        self, pytest_result: subprocess.CompletedProcess
-    ) -> None:
-        """The recursive pytest call must exclude this file to prevent infinite recursion."""
-        args_str = " ".join(str(a) for a in pytest_result.args)
-        assert "test_acceptance_integration" in args_str, (
-            "pytest subprocess args must reference --ignore of test_acceptance_integration.py "
-            "to prevent recursive test execution"
-        )
 
 
 # ---------------------------------------------------------------------------
