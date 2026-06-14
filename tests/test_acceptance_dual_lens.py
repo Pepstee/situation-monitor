@@ -13,12 +13,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 
 
 def _run_acceptance() -> subprocess.CompletedProcess:
     env = {**os.environ, "SM_LLM_BACKEND": "offline"}
     return subprocess.run(
-        [sys.executable, str(ACCEPTANCE_FILE)],
+        [sys.executable, str(ACCEPTANCE_PY)],
         stdout=subprocess.PIPE,
         timeout=120,
         cwd=PROJECT_ROOT,

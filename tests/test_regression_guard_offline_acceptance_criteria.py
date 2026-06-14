@@ -30,6 +30,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_SOURCE_DEFS = FIXTURES / "acceptance_source_defs.json"
 RSS_FIXTURE = FIXTURES / "rss_sample.xml"
@@ -54,7 +55,7 @@ def _offline_env(**extra: str) -> dict[str, str]:
 def acceptance_proc() -> subprocess.CompletedProcess:
     """Run the acceptance script with SM_LLM_BACKEND=offline — exactly as criterion 2 states."""
     return subprocess.run(
-        [sys.executable, str(ACCEPTANCE_FILE)],
+        [sys.executable, str(ACCEPTANCE_PY)],
         capture_output=True,
         cwd=PROJECT_ROOT,
         env=_offline_env(),
@@ -150,7 +151,7 @@ class TestPytestExitsZeroCriterion:
 
     def test_acceptance_file_syntax_is_valid_python(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-c", f"import ast; ast.parse(open({str(ACCEPTANCE_FILE)!r}).read())"],
+            [sys.executable, "-c", f"import ast; ast.parse(open({str(ACCEPTANCE_PY)!r}).read())"],
             capture_output=True,
         )
         assert result.returncode == 0, (

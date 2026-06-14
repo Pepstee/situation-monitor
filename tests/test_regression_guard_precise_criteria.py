@@ -33,6 +33,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_SOURCE_DEFS = FIXTURES / "acceptance_source_defs.json"
 RSS_FIXTURE = FIXTURES / "rss_sample.xml"
@@ -212,7 +213,7 @@ class TestAcceptanceFileLinesExitZero:
         import os
         env = {**os.environ, "SM_LLM_BACKEND": "offline"}
         return subprocess.run(
-            [sys.executable, str(ACCEPTANCE_FILE)],
+            [sys.executable, str(ACCEPTANCE_PY)],
             capture_output=True,
             cwd=PROJECT_ROOT,
             env=env,
@@ -224,7 +225,7 @@ class TestAcceptanceFileLinesExitZero:
         return _acceptance_proc.stdout.decode(errors="replace")
 
     def test_acceptance_file_has_at_least_one_command(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert content.strip(), "acceptance file must not be empty"
         assert "situation_monitor" in content, (
             "acceptance file must invoke situation_monitor"
@@ -232,7 +233,7 @@ class TestAcceptanceFileLinesExitZero:
 
     def test_all_commands_reference_python(self) -> None:
         """Acceptance file must be a Python script (references python/sys.executable)."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "python" in content, (
             "Acceptance file must reference python (shebang or subprocess).\n"
             "The acceptance file must be a Python script runnable as 'python acceptance'."
@@ -306,7 +307,7 @@ class TestAcceptanceFileLinesExitZero:
 
     def test_no_acceptance_command_is_recursive_pytest(self) -> None:
         """No acceptance file line must invoke pytest — that would recurse."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "pytest" not in content, (
             "Acceptance file must not invoke pytest — recursive invocation forbidden."
         )

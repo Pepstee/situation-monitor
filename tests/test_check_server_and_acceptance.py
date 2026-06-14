@@ -26,6 +26,7 @@ from situation_monitor.models import Article
 PROJECT_ROOT = Path(__file__).parent.parent
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 CHECK_SERVER = PROJECT_ROOT / "check_server.py"
 
 
@@ -197,7 +198,7 @@ class TestAcceptanceFileStructure:
 
     @pytest.fixture(scope="class")
     def non_comment_lines(self):
-        text = ACCEPTANCE_FILE.read_text()
+        text = ACCEPTANCE_PY.read_text()
         return [
             line for line in text.splitlines()
             if line.strip() and not line.strip().startswith("#")
@@ -208,7 +209,7 @@ class TestAcceptanceFileStructure:
 
     def test_acceptance_file_has_four_non_comment_lines(self):
         """Acceptance file must reference four commands (Cmd 1..4 or four _run calls)."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         cmd_count = sum(1 for line in content.splitlines() if line.strip().startswith("# Cmd "))
         assert cmd_count >= 4, (
             f"Expected at least 4 '# Cmd N:' comment markers in acceptance file, found {cmd_count}.\n"
@@ -217,7 +218,7 @@ class TestAcceptanceFileStructure:
 
     def test_fourth_line_contains_check_server(self):
         """Acceptance file must reference check_server as the 4th command."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "check_server" in content, (
             "Acceptance file does not reference 'check_server'. "
             "The 4th command must invoke check_server.py."
@@ -232,7 +233,7 @@ class TestAcceptanceFileStructure:
 
     def test_first_line_references_situation_monitor(self):
         """Acceptance file must invoke situation_monitor (cmd1 uses it)."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "situation_monitor" in content or "situation-monitor" in content, (
             "Acceptance file does not reference situation_monitor. "
             "All four commands must invoke 'python -m situation_monitor' or check_server."
@@ -240,7 +241,7 @@ class TestAcceptanceFileStructure:
 
     def test_all_non_comment_lines_reference_sm_llm_backend_offline(self):
         """Acceptance file must set SM_LLM_BACKEND=offline for determinism."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "SM_LLM_BACKEND" in content, (
             "Acceptance file does not reference SM_LLM_BACKEND. "
             "The offline backend must be set for reproducible runs."
@@ -251,7 +252,7 @@ class TestAcceptanceFileStructure:
 
     def test_fourth_line_contains_python_invocation(self):
         """The check_server.py command must be invoked via Python."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         # Find the line(s) referencing check_server and verify they invoke python
         check_server_lines = [l for l in content.splitlines() if "check_server" in l]
         assert check_server_lines, "No line references check_server in acceptance file"

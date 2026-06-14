@@ -33,6 +33,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 ACCEPTANCE_OUTPUT = PROJECT_ROOT / "acceptance_output.txt"
 ACCEPTANCE_SOURCE_DEFS = FIXTURES / "acceptance_source_defs.json"
 RSS_FIXTURE = FIXTURES / "rss_sample.xml"
@@ -427,7 +428,7 @@ class TestAcceptanceFileStructure:
 
     def test_acceptance_file_is_python_script(self) -> None:
         """The acceptance file must be a Python script (has shebang and main entry point)."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "python" in content.splitlines()[0], (
             "acceptance file must start with a Python shebang or reference python in the first line"
         )
@@ -436,56 +437,56 @@ class TestAcceptanceFileStructure:
         )
 
     def test_acceptance_uses_offline_backend(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "SM_LLM_BACKEND" in content, (
             "acceptance file must reference SM_LLM_BACKEND for reproducible offline runs"
         )
 
     def test_acceptance_has_once_subcommand(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "once" in content, (
             "acceptance file must contain the 'once' subcommand"
         )
 
     def test_acceptance_has_digest_dry_run_subcommand(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "digest-dry-run" in content, (
             "acceptance file must contain the 'digest-dry-run' subcommand"
         )
 
     def test_acceptance_has_carrier_discourse_check(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "discourse-carrier" in content, (
             "acceptance file must reference 'discourse-carrier' for the carrier validation check"
         )
 
     def test_acceptance_has_check_server(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "check_server.py" in content, (
             "acceptance file must reference check_server.py (cmd4)"
         )
 
     def test_acceptance_references_rss_sample_fixture(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "rss_sample.xml" in content, (
             "acceptance file must reference rss_sample.xml fixture"
         )
 
     def test_acceptance_references_acceptance_source_defs(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "acceptance_source_defs.json" in content, (
             "acceptance file must reference acceptance_source_defs.json config"
         )
 
     def test_acceptance_references_rss_carrier_fixture(self) -> None:
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "rss_carrier.xml" in content, (
             "acceptance file must reference rss_carrier.xml for the carrier-grep command"
         )
 
     def test_acceptance_is_executable_python(self) -> None:
         """The acceptance file must be a Python script that invokes situation_monitor."""
-        content = ACCEPTANCE_FILE.read_text()
+        content = ACCEPTANCE_PY.read_text()
         assert "situation_monitor" in content, (
             "acceptance file must invoke situation_monitor"
         )

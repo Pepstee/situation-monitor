@@ -25,6 +25,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 CHECKLIST_FILE = PROJECT_ROOT / "CAPABILITY_CHECKLIST.md"
 
 
@@ -53,7 +54,7 @@ def _run_acceptance_once() -> str:
     import os
     env = {**os.environ, "SM_LLM_BACKEND": "offline"}
     result = subprocess.run(
-        [sys.executable, str(ACCEPTANCE_FILE)],
+        [sys.executable, str(ACCEPTANCE_PY)],
         capture_output=True,
         timeout=90,
         cwd=PROJECT_ROOT,

@@ -19,6 +19,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
+ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +39,7 @@ def test_acceptance_file_is_nonempty():
 
 def test_acceptance_file_references_bundled_fixture():
     """The acceptance command must use the bundled RSS fixture, not a real URL."""
-    cmd = ACCEPTANCE_FILE.read_text().strip()
+    cmd = ACCEPTANCE_PY.read_text().strip()
     assert "rss_sample.xml" in cmd, (
         "acceptance command should reference the bundled fixture 'rss_sample.xml' "
         "to avoid real network calls"
@@ -52,7 +53,7 @@ def test_acceptance_file_references_bundled_fixture():
 
 def _run_acceptance() -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(ACCEPTANCE_FILE)],
+        [sys.executable, str(ACCEPTANCE_PY)],
         env={**os.environ, "SM_LLM_BACKEND": "offline"},
         stdout=subprocess.PIPE,
         timeout=60,
