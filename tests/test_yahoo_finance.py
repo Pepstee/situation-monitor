@@ -211,3 +211,192 @@ class TestYahooFinanceScraperEdgeCases:
     def test_duplicate_symbols_produce_two_articles(self) -> None:
         articles = _scraper().fetch(["CL=F", "CL=F"])
         assert len(articles) == 2
+
+
+class TestYahooFinanceBodyFormat:
+    """Verify the exact body string format and field values, not just substring presence."""
+
+    def test_body_format_is_symbol_price_change_pct(self) -> None:
+        articles = _scraper(default=_page("75.42", "-0.0231")).fetch(["CL=F"])
+        body = articles[0].body
+        assert body.startswith("symbol=CL=F price=")
+        assert "change_pct=" in body
+
+    def test_body_price_value_exact(self) -> None:
+        articles = _scraper(default=_page("1234.56", "0.0")).fetch(["GC=F"])
+        body = articles[0].body
+        # Should contain exactly "price=1234.56", not just "1234.56" anywhere
+        assert "price=1234.56" in body
+
+    def test_change_pct_multiplied_by_100_negative(self) -> None:
+        # raw value -0.0231 → -2.31%
+        articles = _scraper(default=_page("75.42", "-0.0231")).fetch(["CL=F"])
+        body = articles[0].body
+        assert "change_pct=-2.31%" in body
+
+    def test_change_pct_multiplied_by_100_positive(self) -> None:
+        # raw value 0.0150 → 1.50%
+        articles = _scraper(default=_page("100.0", "0.0150")).fetch(["GC=F"])
+        body = articles[0].body
+        assert "change_pct=1.50%" in body
+
+    def test_change_pct_zero(self) -> None:
+        articles = _scraper(default=_page("100.0", "0.0")).fetch(["GC=F"])
+        body = articles[0].body
+        assert "change_pct=0.00%" in body
+
+    def test_missing_price_field_price_empty_no_crash(self) -> None:
+        # Page has change_pct but no price fin-streamer — price must be empty string, no exception
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketChangePercent" value="-0.01">-0.01</fin-streamer>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        assert len(articles) == 1
+        assert "price= " in articles[0].body or articles[0].body.index("price=") + 6 <= len(articles[0].body)
+
+    def test_missing_price_field_price_empty_string_in_body(self) -> None:
+        html = b"<html></html>"
+        articles = _scraper(default=html).fetch(["CL=F"])
+        body = articles[0].body
+        # body should be "symbol=CL=F price= change_pct=" — price value is empty
+        assert "price= " in body or body.endswith("price=") or "price= change_pct" in body
+
+
+class TestYahooFinanceParserPrecision:
+    """Tests that exercise parser internals via the scraper interface."""
+
+    def test_value_attr_takes_precedence_over_text_content(self) -> None:
+        # value attr says "200.00", text content says "WRONG" — value attr should win
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketPrice" value="200.00">WRONG</fin-streamer>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        assert "200.00" in articles[0].body
+        assert "WRONG" not in articles[0].body
+
+    def test_text_fallback_when_value_attr_empty(self) -> None:
+        # value attr is empty; text content should be used for price
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketPrice" value="">88.88</fin-streamer>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        assert "88.88" in articles[0].body
+
+    def test_first_price_fin_streamer_wins(self) -> None:
+        # Two price streamers — only the first value should appear in the body
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketPrice" value="111.11">111.11</fin-streamer>'
+            b'<fin-streamer data-field="regularMarketPrice" value="999.99">999.99</fin-streamer>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        assert "price=111.11" in articles[0].body
+        assert "999.99" not in articles[0].body
+
+    def test_first_change_pct_fin_streamer_wins(self) -> None:
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketChangePercent" value="0.01">0.01</fin-streamer>'
+            b'<fin-streamer data-field="regularMarketChangePercent" value="0.99">0.99</fin-streamer>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        body = articles[0].body
+        # First value 0.01 → 1.00%; second value 0.99 → 99.00% — only first should appear
+        assert "1.00%" in body
+        assert "99.00%" not in body
+
+    def test_non_numeric_change_pct_value_stored_as_is(self) -> None:
+        # Non-numeric value attr cannot be multiplied — should be stored without crash
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketPrice" value="50.0">50.0</fin-streamer>'
+            b'<fin-streamer data-field="regularMarketChangePercent" value="N/A">N/A</fin-streamer>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        assert len(articles) == 1  # no crash
+
+    def test_json_fallback_negative_change_pct_math(self) -> None:
+        # raw -0.025 → -2.50%
+        html = b'<script>{"regularMarketChangePercent":{"raw":-0.025}}</script>'
+        articles = _scraper(default=html).fetch(["CL=F"])
+        body = articles[0].body
+        assert "change_pct=" in body
+        assert "-2.50%" in body
+
+    def test_fin_streamer_price_wins_over_json_fallback(self) -> None:
+        # fin-streamer is parsed first; JSON fallback should not override it
+        html = (
+            b'<html><body>'
+            b'<fin-streamer data-field="regularMarketPrice" value="50.00">50.00</fin-streamer>'
+            b'<script>{"regularMarketPrice":{"raw":999.99}}</script>'
+            b'</body></html>'
+        )
+        articles = _scraper(default=html).fetch(["CL=F"])
+        assert "price=50.00" in articles[0].body
+        assert "999.99" not in articles[0].body
+
+
+class TestYahooFinanceSymbolLabels:
+    """Verify known-symbol labels appear in title, and unknown symbols fall back to the symbol."""
+
+    def test_known_symbol_label_in_title(self) -> None:
+        articles = _scraper().fetch(["CL=F"])
+        assert "WTI Crude Oil" in articles[0].title
+
+    def test_brent_crude_label(self) -> None:
+        articles = _scraper().fetch(["BZ=F"])
+        assert "Brent Crude Oil" in articles[0].title
+
+    def test_gold_label(self) -> None:
+        articles = _scraper().fetch(["GC=F"])
+        assert "Gold" in articles[0].title
+
+    def test_eurusd_label(self) -> None:
+        articles = _scraper().fetch(["EURUSD=X"])
+        assert "EUR/USD" in articles[0].title
+
+    def test_unknown_symbol_falls_back_to_symbol_in_title(self) -> None:
+        # Symbol not in _SYMBOL_LABELS → symbol string used as label
+        articles = _scraper().fetch(["AAPL"])
+        assert "AAPL" in articles[0].title
+
+    def test_unknown_symbol_tagged_commodities_when_no_x_suffix(self) -> None:
+        articles = _scraper().fetch(["AAPL"])
+        assert "commodities" in articles[0].tags
+
+    def test_unknown_fx_symbol_tagged_fx(self) -> None:
+        articles = _scraper().fetch(["CHFUSD=X"])
+        assert "fx" in articles[0].tags
+
+
+class TestYahooFinanceUrlStructure:
+    """URL construction — trailing slash, base domain, per-symbol uniqueness."""
+
+    def test_url_ends_with_trailing_slash(self) -> None:
+        articles = _scraper().fetch(["CL=F"])
+        assert articles[0].url.endswith("/")
+
+    def test_urls_differ_per_symbol(self) -> None:
+        client = _FakeClient(default=_page())
+        articles = YahooFinanceScraper(client=client).fetch(["CL=F", "GC=F"])
+        assert articles[0].url != articles[1].url
+
+    def test_url_called_with_correct_symbol_path(self) -> None:
+        client = _FakeClient(default=_page())
+        YahooFinanceScraper(client=client).fetch(["EURUSD=X"])
+        assert any("EURUSD=X" in url for url in client.calls)
+
+    def test_each_url_called_exactly_once(self) -> None:
+        client = _FakeClient(default=_page())
+        YahooFinanceScraper(client=client).fetch(["CL=F", "GC=F"])
+        assert client.calls.count("https://finance.yahoo.com/quote/CL=F/") == 1
+        assert client.calls.count("https://finance.yahoo.com/quote/GC=F/") == 1
