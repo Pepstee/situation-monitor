@@ -16,7 +16,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 _SAFE_SCHEMES = frozenset({"http", "https"})
-PLACEHOLDER = "#"
+INERT_HREF = "#"
 
 
 def safe_url(url: str | None) -> str:
@@ -29,13 +29,13 @@ def safe_url(url: str | None) -> str:
     so ``"java\\tscript:alert(1)"`` cannot slip past as a relative path.
     """
     if not url:
-        return PLACEHOLDER
+        return INERT_HREF
     candidate = url.strip()
     probe = "".join(ch for ch in candidate if ord(ch) > 0x20)
     try:
         scheme = urlsplit(probe).scheme.lower()
     except ValueError:
-        return PLACEHOLDER
+        return INERT_HREF
     if scheme and scheme not in _SAFE_SCHEMES:
-        return PLACEHOLDER
+        return INERT_HREF
     return candidate
