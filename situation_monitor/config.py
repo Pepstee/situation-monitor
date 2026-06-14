@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from situation_monitor.auth import CredentialRegistry
 from situation_monitor.models import Domain
 
 
@@ -18,6 +19,7 @@ class SourceDef:
     domain: Domain
     lens: str
     description: str = ""
+    auth_platform: str | None = None
 
 
 DEFAULT_SOURCE_DEFS: list[SourceDef] = [
@@ -158,10 +160,14 @@ class Config:
                     domain=Domain[sd["domain"].upper()],
                     lens=sd["lens"],
                     description=sd.get("description", ""),
+                    auth_platform=sd.get("auth_platform"),
                 )
                 for sd in data["source_defs"]
             ]
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def credential_registry(self) -> CredentialRegistry:
+        return CredentialRegistry.load_from_env()
 
     @classmethod
     def from_env(cls) -> "Config":
