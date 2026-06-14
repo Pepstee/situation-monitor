@@ -69,6 +69,43 @@ DEFAULT_SOURCE_DEFS: list[SourceDef] = [
     SourceDef("https://www.rt.com/rss/technology/", "RT Technology", Domain.AI, "state", "Russian state broadcaster technology feed"),
     SourceDef("https://www.globaltimes.cn/rss/outbrain.xml", "Global Times", Domain.AI, "state", "Chinese state-backed English tabloid"),
     SourceDef("https://www.cgtn.com/subscribe/rss/section/sci-tech.xml", "CGTN Sci-Tech", Domain.AI, "state", "Chinese state television science and tech feed"),
+    # WORLD — left (multilingual)
+    SourceDef("https://www.lemonde.fr/rss/une.xml", "Le Monde", Domain.WORLD, "left", "French centre-left broadsheet world edition"),
+    SourceDef("https://www.fr.de/rssfeed.rdf", "Frankfurter Rundschau", Domain.WORLD, "left", "German centre-left daily newspaper"),
+    # WORLD — right (multilingual)
+    SourceDef("https://www.lefigaro.fr/rss/figaro_actualites.xml", "Le Figaro", Domain.WORLD, "right", "French right-wing daily newspaper"),
+    SourceDef("https://www.elmundo.es/rss/portada.xml", "El Mundo", Domain.WORLD, "right", "Spanish right-wing daily newspaper"),
+    # WORLD — centre (multilingual)
+    SourceDef("https://www.spiegel.de/international/index.rss", "Der Spiegel International", Domain.WORLD, "centre", "German liberal news magazine English edition"),
+    SourceDef("https://www.japantimes.co.jp/feed/", "The Japan Times", Domain.WORLD, "centre", "Japanese English-language centre daily"),
+    SourceDef("https://www.ansa.it/sito/ansait_rss.xml", "ANSA", Domain.WORLD, "centre", "Italian state wire agency general news feed"),
+    # WORLD — state (multilingual)
+    SourceDef("https://www.france24.com/en/rss", "France 24", Domain.WORLD, "state", "French state international broadcaster"),
+    SourceDef("https://en.irna.ir/rss", "IRNA", Domain.WORLD, "state", "Persian/Iranian state news agency English feed"),
+    # MARKETS — left (multilingual)
+    SourceDef("https://www.cartacapital.com.br/feed/", "Carta Capital", Domain.MARKETS, "left", "Brazilian Portuguese left-wing political and economic weekly"),
+    SourceDef("https://www.lamarea.com/feed/", "La Marea", Domain.MARKETS, "left", "Spanish independent left-wing weekly"),
+    # MARKETS — right (multilingual)
+    SourceDef("https://feeds.cms.handelsblatt.com/schlagzeilen", "Handelsblatt", Domain.MARKETS, "right", "German pro-business daily newspaper"),
+    SourceDef("https://asia.nikkei.com/rss/feed/nar", "Nikkei Asia", Domain.MARKETS, "right", "Japanese financial newspaper Asia edition"),
+    # MARKETS — centre (multilingual)
+    SourceDef("https://feeds.folha.uol.com.br/mercado/rss091.xml", "Folha de S.Paulo Mercado", Domain.MARKETS, "centre", "Brazilian Portuguese centre daily business section"),
+    SourceDef("https://www.dailysabah.com/rss/economy", "Daily Sabah Economy", Domain.MARKETS, "centre", "Turkish state-aligned newspaper economy section"),
+    # MARKETS — state (multilingual)
+    SourceDef("https://www.arabnews.com/rss.xml", "Arab News", Domain.MARKETS, "state", "Arabic Saudi-based state-affiliated English news"),
+    SourceDef("https://rss.dw.com/rdf/rss-en-business", "DW Business", Domain.MARKETS, "state", "German state international broadcaster business feed"),
+    # AI — left (multilingual)
+    SourceDef("https://netzpolitik.org/feed/", "Netzpolitik.org", Domain.AI, "left", "German digital-rights journalism and policy"),
+    SourceDef("https://www.laquadrature.net/feed/", "La Quadrature du Net", Domain.AI, "left", "French digital civil liberties advocacy organisation"),
+    # AI — right (multilingual)
+    SourceDef("https://www.lefigaro.fr/rss/figaro_sciences.xml", "Le Figaro Sciences", Domain.AI, "right", "French right-wing daily science and technology section"),
+    SourceDef("https://rss.elconfidencial.com/tecnologia/", "El Confidencial Tech", Domain.AI, "right", "Spanish centre-right digital newspaper technology section"),
+    # AI — centre (multilingual)
+    SourceDef("https://www.heise.de/rss/heise.rdf", "Heise Online", Domain.AI, "centre", "German technology journalism and IT news"),
+    SourceDef("https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/tecnologia/portada", "El País Tecnología", Domain.AI, "centre", "Spanish centre-left broadsheet technology section"),
+    # AI — state (multilingual)
+    SourceDef("https://rss.dw.com/rdf/rss-en-sci_tech", "DW Sci-Tech", Domain.AI, "state", "German state international broadcaster science and technology"),
+    SourceDef("https://www.dailysabah.com/rss/technology", "Daily Sabah Tech", Domain.AI, "state", "Turkish state-aligned newspaper technology section"),
 ]
 
 
