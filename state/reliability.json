@@ -4,15 +4,19 @@
     278
   ],
   "tests/fixtures/rss_left.xml": [
-    522,
-    522
+    3158,
+    3158
   ],
   "tests/fixtures/rss_right.xml": [
-    522,
-    522
+    3158,
+    3158
   ],
   "tests/fixtures/rss_sample.xml": [
-    2052,
-    4104
+    12404,
+    24808
+  ],
+  "/home/gutua/agentic-orchestrator/projects/edge/tests/fixtures/rss_sample.xml": [
+    768,
+    1536
   ]
 }
