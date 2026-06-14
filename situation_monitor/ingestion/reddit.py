@@ -20,7 +20,12 @@ class RedditScraper:
     def fetch(self, subreddit: str) -> list[Article]:
         url = f"{_BASE}/{subreddit}.json"
         raw = self._client.get(url)
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return []
+        if not isinstance(data, dict):
+            return []
         articles: list[Article] = []
         for child in data.get("data", {}).get("children", []):
             post = child.get("data", {})
