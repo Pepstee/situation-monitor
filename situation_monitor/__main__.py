@@ -29,7 +29,7 @@ from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article, Domain
 from situation_monitor.alerting import check_and_emit_alerts
 from situation_monitor.polymarket import PolymarketClient, PolymarketMatcher
-from situation_monitor.propaganda import enrich_article
+from situation_monitor.propaganda import apply_lexicon_baseline, enrich_article
 from situation_monitor.relevance import score_relevance
 from situation_monitor.reliability import ReliabilityTracker
 
@@ -253,10 +253,13 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
             for article in articles:
                 article.polymarket_odds = _matcher.match(article, _legacy_markets)
 
-    # Propaganda detection (best-effort; failures silently leave fields at defaults)
+    # Propaganda detection: LLM augmentation (best-effort) over a deterministic,
+    # offline lexicon floor so the propaganda layer is genuinely populated and
+    # explainable even with no LLM in the loop.
     try:
         for article in articles:
             enrich_article(article, llm)
+            apply_lexicon_baseline(article)
     except Exception as exc:
         print(f"Warning: propaganda detection skipped: {exc}", file=sys.stderr)
 
