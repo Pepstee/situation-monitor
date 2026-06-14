@@ -1,22 +1,18 @@
 {
-  "/home/gutua/agentic-orchestrator/projects/.worktrees/edge_355807f2f6b0/tests/fixtures/rss_sample.xml": [
-    139,
-    278
-  ],
   "tests/fixtures/rss_left.xml": [
-    3158,
-    3158
+    1020,
+    1020
   ],
   "tests/fixtures/rss_right.xml": [
-    3158,
-    3158
+    1020,
+    1020
   ],
   "tests/fixtures/rss_sample.xml": [
-    12404,
-    24808
+    4005,
+    8010
   ],
-  "/home/gutua/agentic-orchestrator/projects/edge/tests/fixtures/rss_sample.xml": [
-    768,
-    1536
+  "/home/gutua/agentic-orchestrator/projects/.worktrees/edge_9dd26d5d4250/tests/fixtures/rss_sample.xml": [
+    297,
+    594
   ]
 }
