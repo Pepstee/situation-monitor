@@ -37,6 +37,15 @@ _TEMPLATE = """\
 </head>
 <body>
   <h1>Situation Monitor</h1>
+  <form method="get" style="margin-bottom: 0.75rem;">
+    <label for="domain-select">Domain:</label>
+    <select id="domain-select" name="domain" onchange="this.form.submit()">
+      <option value="">All</option>
+      <option value="world" {% if request.args.get('domain','').lower() == 'world' %}selected{% endif %}>World</option>
+      <option value="markets" {% if request.args.get('domain','').lower() == 'markets' %}selected{% endif %}>Markets</option>
+      <option value="ai" {% if request.args.get('domain','').lower() == 'ai' %}selected{% endif %}>AI</option>
+    </select>
+  </form>
   <p>{{ stories | length }} stories — auto-refreshes every 60 s</p>
   {% if events %}
   <h2>Dual-Lens Events</h2>
