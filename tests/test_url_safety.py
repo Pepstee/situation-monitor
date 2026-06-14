@@ -17,7 +17,7 @@ from situation_monitor.dashboard import make_app
 from situation_monitor.digest import breaking_ping
 from situation_monitor.models import Article, SpinResult
 from situation_monitor.dual_lens import AnnotatedArticle, DualLensEvent
-from situation_monitor.urls import PLACEHOLDER, safe_url
+from situation_monitor.urls import INERT_HREF, safe_url
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ from situation_monitor.urls import PLACEHOLDER, safe_url
     ],
 )
 def test_safe_url_neutralises_hostile_schemes(hostile: str) -> None:
-    assert safe_url(hostile) == PLACEHOLDER
+    assert safe_url(hostile) == INERT_HREF
 
 
 @pytest.mark.parametrize(
@@ -56,8 +56,8 @@ def test_safe_url_preserves_safe_urls(ok: str) -> None:
 
 
 def test_safe_url_handles_empty_and_none() -> None:
-    assert safe_url(None) == PLACEHOLDER
-    assert safe_url("") == PLACEHOLDER
+    assert safe_url(None) == INERT_HREF
+    assert safe_url("") == INERT_HREF
 
 
 # ---------------------------------------------------------------------------
