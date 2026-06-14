@@ -37,9 +37,10 @@ _ECB_FX_URL = (
     "https://www.ecb.europa.eu/rss/fxref-eurusd.html"
 )
 
-# Yahoo Finance RSS for commodities (oil, gold)
+# Yahoo Finance RSS for commodities (oil, gold) and broad equity index (SPY)
 _YAHOO_OIL_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=CL%3DF&region=US&lang=en-US"
 _YAHOO_GOLD_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=GC%3DF&region=US&lang=en-US"
+_YAHOO_SPY_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=SPY&region=US&lang=en-US"
 
 # Reuters / AP regulatory RSS
 _REUTERS_GOV_URL = "https://feeds.reuters.com/reuters/politicsNews"
@@ -118,7 +119,7 @@ def fetch_practical_movers(client: HttpClient | None = None) -> list[PracticalMo
         failures += 1
         last_error = exc
 
-    # --- Yahoo Finance RSS for oil and gold ---
+    # --- Yahoo Finance RSS for oil, gold, and S&P 500 equity index ---
     for symbol, name, affects, watch, url in [
         ("CL%3DF", "WTI Crude Oil", "Energy costs, transport, petrol prices",
          "OPEC meetings, US rig count, geopolitical tension",
@@ -126,6 +127,9 @@ def fetch_practical_movers(client: HttpClient | None = None) -> list[PracticalMo
         ("GC%3DF", "Gold", "Safe-haven demand, jewellery, central bank reserves",
          "USD strength, inflation expectations, geopolitical risk",
          _YAHOO_GOLD_URL),
+        ("SPY", "S&P 500 (SPY)", "Equity investors, pension funds, 401(k) holders",
+         "Fed policy, earnings season, macro data releases",
+         _YAHOO_SPY_URL),
     ]:
         attempts += 1
         try:
