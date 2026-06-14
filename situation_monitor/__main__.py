@@ -427,15 +427,18 @@ def _cmd_digest_dry_run(config: Config) -> None:
     """Assemble a Telegram digest from a fresh ingest and print it — never sends."""
     from situation_monitor.digest import daily_digest
     from situation_monitor.dual_lens import group_by_event
-    from situation_monitor.practical import fetch_practical_movers
 
     articles = _ingest_and_enrich(config)
     events = group_by_event(articles)
 
-    try:
-        movers = fetch_practical_movers()
-    except Exception:
+    if config.llm_backend in ("offline", "stub"):
         movers = []
+    else:
+        from situation_monitor.practical import fetch_practical_movers
+        try:
+            movers = fetch_practical_movers()
+        except Exception:
+            movers = []
 
     print(daily_digest(events, movers))
 
