@@ -1,0 +1,4 @@
+DUAL_LENS: PASS
+SPIN: PASS
+WEB: PASS
+TESTS: (not tested here)
