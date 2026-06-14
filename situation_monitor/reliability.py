@@ -41,4 +41,6 @@ class ReliabilityTracker:
             pass
 
     def save(self, path: str) -> None:
-        Path(path).write_text(json.dumps(self._data, indent=2))
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(self._data, indent=2))

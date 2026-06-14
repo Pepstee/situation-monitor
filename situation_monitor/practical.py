@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from email.utils import parsedate_to_datetime
 from typing import Optional
 
 from situation_monitor.ingestion.base import HttpClient

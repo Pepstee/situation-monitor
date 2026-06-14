@@ -135,10 +135,19 @@ def _load_polymarket_markets(config: Config) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+def _default_state_path() -> str:
+    """Per-user runtime state location (XDG). Kept OUT of the project tree so the
+    deliverable stays a pure artefact — a writable `state/` dir inside it is scratch."""
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state"
+    )
+    return os.path.join(base, "situation_monitor", "reliability.json")
+
+
 def _ingest_and_enrich(config: Config) -> list[Article]:
     articles: list[Article] = []
     tracker = ReliabilityTracker()
-    state_path = config.state_file or "state/reliability.json"
+    state_path = config.state_file or _default_state_path()
     tracker.load(state_path)
 
     # Domain-tagged sources come first so they win URL-based deduplication.
