@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Markets Test Feed</title>
+    <link>http://markets.example.com</link>
+    <description>Markets RSS fixture for acceptance tests</description>
+    <item>
+      <title>EUR/USD Falls as Fed Signals Prolonged High Rates</title>
+      <link>http://markets.example.com/eurusd-fed-rates</link>
+      <description>The EUR/USD pair dropped to a three-month low after Federal Reserve officials signalled interest rates would remain elevated. USD strength weighed on the euro.</description>
+      <pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Crude Oil Prices Surge on OPEC Supply Cut Extension</title>
+      <link>http://markets.example.com/crude-oil-opec</link>
+      <description>Crude oil jumped above $90 per barrel after OPEC extended its production cuts. Gold also advanced as risk sentiment deteriorated.</description>
+      <pubDate>Mon, 01 Jan 2024 11:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>S&amp;P 500 Hits Record High on Strong Earnings Season</title>
+      <link>http://markets.example.com/sp500-record</link>
+      <description>The S&amp;P 500 index closed at a record high as corporate earnings beat analyst expectations across technology and consumer sectors.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
