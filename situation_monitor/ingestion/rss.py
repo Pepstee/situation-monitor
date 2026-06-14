@@ -19,7 +19,13 @@ class RSSFetcher(Fetcher):
 
     def fetch(self, url: str, source_def: SourceDef | None = None) -> list[Article]:
         raw = self._client.get(url)
-        root = ET.fromstring(raw)
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError:
+            # A flaky source can return an HTML error page, a truncated body, or
+            # empty bytes; treat unparseable XML as "no articles" rather than
+            # crashing the whole ingestion run.
+            return []
         channel = root.find("channel")
         if channel is None:
             return []

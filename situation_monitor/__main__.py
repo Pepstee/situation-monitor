@@ -32,6 +32,7 @@ from situation_monitor.polymarket import PolymarketClient, PolymarketMatcher
 from situation_monitor.propaganda import apply_lexicon_baseline, enrich_article
 from situation_monitor.relevance import score_relevance
 from situation_monitor.reliability import ReliabilityTracker
+from situation_monitor.urls import safe_url
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +302,7 @@ def _format_article(art: Article, heading: str = "##") -> None:
     flags = ", ".join(art.propaganda_flags) if art.propaganda_flags else "none"
     odds = f"{art.polymarket_odds:.2f}" if art.polymarket_odds is not None else "—"
     print(f"{heading} {art.title}")
-    print(f"<{art.url}>")
+    print(f"<{safe_url(art.url)}>")
     print(
         f"Source: {art.source} | Lean: {lean} | Reliability tier: {rel_tier} | "
         f"Reliability: {rel} | Relevance: {relevance} | Cluster: {cluster}"
