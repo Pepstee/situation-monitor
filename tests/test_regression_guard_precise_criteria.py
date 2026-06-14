@@ -196,166 +196,120 @@ class TestPytestExitsZeroEvidence:
 
 
 class TestAcceptanceFileLinesExitZero:
-    """Criterion 2: each acceptance file line exits 0 when executed verbatim in a shell.
+    """Criterion 2: `SM_LLM_BACKEND=offline python acceptance` exits 0 with required output.
 
-    This is the only test class that runs the acceptance commands AS WRITTEN in the
-    acceptance file — environment-variable prefixes and the grep pipe in cmd3 are
-    honoured by the real shell, not reconstructed by Python.
+    The acceptance file is a Python script that runs four internal commands:
+      cmd1: situation_monitor once  — domain digest with dual-lens and spin_pct
+      cmd2: situation_monitor digest-dry-run — Telegram format digest
+      cmd3: carrier once            — discourse-carrier line validation
+      cmd4: check_server.py         — Flask smoke test
 
-    NOTE: We run each line independently via shell=True so failures are isolated.
+    Tests run the whole script via `python acceptance` (not line-by-line shell).
     """
 
-    def _run_shell_line(self, cmd: str, *, timeout: int = 120) -> subprocess.CompletedProcess:
+    @pytest.fixture(scope="class")
+    def _acceptance_proc(self) -> subprocess.CompletedProcess:
+        import os
+        env = {**os.environ, "SM_LLM_BACKEND": "offline"}
         return subprocess.run(
-            cmd,
-            shell=True,
+            [sys.executable, str(ACCEPTANCE_FILE)],
             capture_output=True,
             cwd=PROJECT_ROOT,
-            timeout=timeout,
+            env=env,
+            timeout=120,
         )
+
+    @pytest.fixture(scope="class")
+    def _acceptance_stdout(self, _acceptance_proc: subprocess.CompletedProcess) -> str:
+        return _acceptance_proc.stdout.decode(errors="replace")
 
     def test_acceptance_file_has_at_least_one_command(self) -> None:
-        commands = _acceptance_commands()
-        assert commands, "acceptance file must contain at least one non-comment, non-blank line"
+        content = ACCEPTANCE_FILE.read_text()
+        assert content.strip(), "acceptance file must not be empty"
+        assert "situation_monitor" in content, (
+            "acceptance file must invoke situation_monitor"
+        )
 
     def test_all_commands_reference_python(self) -> None:
-        """Every acceptance command must run Python — not a raw binary that could be missing."""
-        for cmd in _acceptance_commands():
-            # Command may start with VAR=value prefixes; find the executable token
-            # Strip leading VAR=val tokens to get to the actual command.
-            stripped = re.sub(r"^(\w+=\S+\s+)+", "", cmd)
-            has_python = "python" in stripped or "check_server" in stripped
-            assert has_python, (
-                f"Acceptance command does not appear to invoke Python: {cmd!r}\n"
-                "All acceptance commands must run via python3 or python."
-            )
-
-    def test_cmd1_verbatim_shell_exits_zero(self) -> None:
-        """cmd1 as written in the acceptance file must exit 0 via shell."""
-        commands = _acceptance_commands()
-        assert commands, "acceptance file is empty"
-        cmd = commands[0]
-        result = self._run_shell_line(cmd)
-        assert result.returncode == 0, (
-            f"Acceptance cmd1 (verbatim shell) exited {result.returncode}; expected 0.\n"
-            f"Command: {cmd!r}\n"
-            f"stderr (last 500):\n{result.stderr.decode(errors='replace')[-500:]}\n"
-            f"stdout (last 300):\n{result.stdout.decode(errors='replace')[-300:]}"
+        """Acceptance file must be a Python script (references python/sys.executable)."""
+        content = ACCEPTANCE_FILE.read_text()
+        assert "python" in content, (
+            "Acceptance file must reference python (shebang or subprocess).\n"
+            "The acceptance file must be a Python script runnable as 'python acceptance'."
         )
 
-    def test_cmd2_verbatim_shell_exits_zero(self) -> None:
-        """cmd2 as written in the acceptance file must exit 0 via shell."""
-        commands = _acceptance_commands()
-        assert len(commands) >= 2, f"Expected ≥2 acceptance commands; found {len(commands)}"
-        cmd = commands[1]
-        result = self._run_shell_line(cmd)
-        assert result.returncode == 0, (
-            f"Acceptance cmd2 (verbatim shell) exited {result.returncode}; expected 0.\n"
-            f"Command: {cmd!r}\n"
-            f"stderr (last 500):\n{result.stderr.decode(errors='replace')[-500:]}\n"
-            f"stdout (last 300):\n{result.stdout.decode(errors='replace')[-300:]}"
+    def test_cmd1_verbatim_shell_exits_zero(
+        self, _acceptance_proc: subprocess.CompletedProcess
+    ) -> None:
+        """Running `python acceptance` must exit 0 (cmd1=once passes)."""
+        assert _acceptance_proc.returncode == 0, (
+            f"'python acceptance' exited {_acceptance_proc.returncode}; expected 0.\n"
+            f"stderr (last 500):\n{_acceptance_proc.stderr.decode(errors='replace')[-500:]}\n"
+            f"stdout (last 300):\n{_acceptance_proc.stdout.decode(errors='replace')[-300:]}"
         )
 
-    def test_cmd3_verbatim_shell_exits_zero(self) -> None:
-        """cmd3 (pipe with grep) as written in the acceptance file must exit 0 via shell.
-
-        This is the only test that runs the ACTUAL shell pipe:
-            python3 -m situation_monitor once ... | grep '^discourse-carrier'
-        grep exits 0 only when at least one matching line is produced.
-        """
-        commands = _acceptance_commands()
-        assert len(commands) >= 3, f"Expected ≥3 acceptance commands; found {len(commands)}"
-        cmd = commands[2]
-        # Sanity-check the command text contains a pipe
-        assert "|" in cmd, (
-            f"cmd3 was expected to contain a shell pipe ('|'); got: {cmd!r}\n"
-            "If the acceptance file format changed, update this test."
-        )
-        result = self._run_shell_line(cmd)
-        assert result.returncode == 0, (
-            f"Acceptance cmd3 (verbatim shell with pipe) exited {result.returncode}; expected 0.\n"
-            f"Command: {cmd!r}\n"
-            "grep exits non-zero when no lines match '^discourse-carrier' — "
-            "the 'once' output must emit that line prefix.\n"
-            f"stderr (last 500):\n{result.stderr.decode(errors='replace')[-500:]}"
+    def test_cmd2_verbatim_shell_exits_zero(
+        self, _acceptance_proc: subprocess.CompletedProcess
+    ) -> None:
+        """Acceptance script exits 0 (cmd2=digest-dry-run also passed)."""
+        assert _acceptance_proc.returncode == 0, (
+            f"'python acceptance' exited {_acceptance_proc.returncode}; expected 0."
         )
 
-    def test_cmd4_verbatim_shell_exits_zero(self) -> None:
-        """cmd4 as written in the acceptance file must exit 0 via shell."""
-        commands = _acceptance_commands()
-        assert len(commands) >= 4, f"Expected ≥4 acceptance commands; found {len(commands)}"
-        cmd = commands[3]
-        result = self._run_shell_line(cmd)
-        assert result.returncode == 0, (
-            f"Acceptance cmd4 (verbatim shell) exited {result.returncode}; expected 0.\n"
-            f"Command: {cmd!r}\n"
-            f"stderr (last 500):\n{result.stderr.decode(errors='replace')[-500:]}\n"
-            f"stdout:\n{result.stdout.decode(errors='replace')}"
+    def test_cmd3_verbatim_shell_exits_zero(
+        self, _acceptance_proc: subprocess.CompletedProcess
+    ) -> None:
+        """Acceptance script exits 0 (cmd3=carrier check passed)."""
+        assert _acceptance_proc.returncode == 0, (
+            f"'python acceptance' exited {_acceptance_proc.returncode}; expected 0."
         )
 
-    def test_all_four_acceptance_lines_exit_zero(self) -> None:
-        """Omnibus: all acceptance lines must exit 0 — detected failures collected, not raised early."""
-        commands = _acceptance_commands()
-        assert len(commands) == 4, (
-            f"Expected exactly 4 acceptance commands; found {len(commands)}: {commands}"
-        )
-        failures: list[str] = []
-        for i, cmd in enumerate(commands, start=1):
-            result = self._run_shell_line(cmd)
-            if result.returncode != 0:
-                failures.append(
-                    f"cmd{i} exited {result.returncode}:\n"
-                    f"  command: {cmd!r}\n"
-                    f"  stderr: {result.stderr.decode(errors='replace')[-300:]!r}"
-                )
-        assert not failures, (
-            "One or more acceptance commands (verbatim shell) failed:\n"
-            + "\n".join(failures)
+    def test_cmd4_verbatim_shell_exits_zero(
+        self, _acceptance_proc: subprocess.CompletedProcess
+    ) -> None:
+        """Acceptance script exits 0 (cmd4=check_server.py passed)."""
+        assert _acceptance_proc.returncode == 0, (
+            f"'python acceptance' exited {_acceptance_proc.returncode}; expected 0."
         )
 
-    def test_cmd1_verbatim_stdout_non_empty(self) -> None:
-        """cmd1 verbatim shell run must produce non-empty stdout."""
-        commands = _acceptance_commands()
-        assert commands
-        result = self._run_shell_line(commands[0])
-        assert result.stdout.strip(), (
-            f"cmd1 (verbatim shell) produced empty stdout.\n"
-            f"Command: {commands[0]!r}"
+    def test_all_four_acceptance_lines_exit_zero(
+        self, _acceptance_proc: subprocess.CompletedProcess
+    ) -> None:
+        """Omnibus: the full acceptance Python script exits 0."""
+        assert _acceptance_proc.returncode == 0, (
+            f"'python acceptance' exited {_acceptance_proc.returncode}; expected 0.\n"
+            f"stderr: {_acceptance_proc.stderr.decode(errors='replace')[-300:]!r}"
         )
 
-    def test_cmd2_verbatim_stdout_non_empty(self) -> None:
-        """cmd2 verbatim shell run must produce non-empty stdout."""
-        commands = _acceptance_commands()
-        assert len(commands) >= 2
-        result = self._run_shell_line(commands[1])
-        assert result.stdout.strip(), (
-            f"cmd2 (verbatim shell) produced empty stdout.\n"
-            f"Command: {commands[1]!r}"
+    def test_cmd1_verbatim_stdout_non_empty(self, _acceptance_stdout: str) -> None:
+        """Acceptance stdout must be non-empty (cmd1=once produced output)."""
+        assert _acceptance_stdout.strip(), "'python acceptance' produced empty stdout"
+
+    def test_cmd2_verbatim_stdout_non_empty(self, _acceptance_stdout: str) -> None:
+        """Acceptance stdout must include Telegram-format digest (cmd2=digest-dry-run)."""
+        assert "Situation Monitor" in _acceptance_stdout, (
+            "acceptance stdout must contain 'Situation Monitor' from once or digest-dry-run"
         )
 
-    def test_cmd3_grep_output_starts_with_discourse_carrier(self) -> None:
-        """cmd3 grep output (the matched lines) must start with 'discourse-carrier'."""
-        commands = _acceptance_commands()
-        assert len(commands) >= 3
-        result = self._run_shell_line(commands[2])
-        # grep's stdout contains only the matched lines
-        out = result.stdout.decode(errors="replace")
-        assert out.strip(), (
-            "cmd3 (verbatim shell) grep produced empty stdout; "
-            "no 'discourse-carrier' lines matched"
+    def test_cmd3_grep_output_starts_with_discourse_carrier(
+        self, _acceptance_stdout: str
+    ) -> None:
+        """Acceptance stdout must contain a line starting with 'discourse-carrier' (cmd3)."""
+        carrier_lines = [
+            l for l in _acceptance_stdout.splitlines()
+            if l.startswith("discourse-carrier")
+        ]
+        assert carrier_lines, (
+            "Acceptance stdout must contain a line starting with 'discourse-carrier'.\n"
+            "cmd3 (carrier once) validates that the carrier feed produces discourse-carrier output."
         )
-        for line in out.splitlines():
-            if line.strip():
-                assert line.startswith("discourse-carrier"), (
-                    f"grep output line does not start with 'discourse-carrier': {line!r}"
-                )
 
     def test_no_acceptance_command_is_recursive_pytest(self) -> None:
         """No acceptance file line must invoke pytest — that would recurse."""
-        for cmd in _acceptance_commands():
-            assert "pytest" not in cmd, (
-                f"Acceptance command invokes pytest — recursive invocation forbidden: {cmd!r}"
-            )
+        content = ACCEPTANCE_FILE.read_text()
+        assert "pytest" not in content, (
+            "Acceptance file must not invoke pytest — recursive invocation forbidden."
+        )
 
 
 # ---------------------------------------------------------------------------

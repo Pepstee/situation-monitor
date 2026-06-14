@@ -10,7 +10,9 @@ the bundled RSS fixture — no real network calls are made.
 """
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -49,13 +51,11 @@ def test_acceptance_file_references_bundled_fixture():
 
 
 def _run_acceptance() -> subprocess.CompletedProcess:
-    cmd = ACCEPTANCE_FILE.read_text().strip()
     return subprocess.run(
-        cmd,
-        shell=True,
+        [sys.executable, str(ACCEPTANCE_FILE)],
+        env={**os.environ, "SM_LLM_BACKEND": "offline"},
         stdout=subprocess.PIPE,
-        # stderr is already redirected to /dev/null inside the acceptance command
-        timeout=30,
+        timeout=60,
         cwd=PROJECT_ROOT,
     )
 

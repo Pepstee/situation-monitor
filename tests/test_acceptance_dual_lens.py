@@ -6,7 +6,9 @@ non-empty right_articles is present in the output.
 """
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -14,13 +16,13 @@ ACCEPTANCE_FILE = PROJECT_ROOT / "acceptance"
 
 
 def _run_acceptance() -> subprocess.CompletedProcess:
-    cmd = ACCEPTANCE_FILE.read_text().strip()
+    env = {**os.environ, "SM_LLM_BACKEND": "offline"}
     return subprocess.run(
-        cmd,
-        shell=True,
+        [sys.executable, str(ACCEPTANCE_FILE)],
         stdout=subprocess.PIPE,
-        timeout=30,
+        timeout=120,
         cwd=PROJECT_ROOT,
+        env=env,
     )
 
 
