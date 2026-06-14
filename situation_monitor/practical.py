@@ -16,8 +16,8 @@ def _client(injectable: HttpClient | None) -> HttpClient:
     if injectable is not None:
         return injectable
     if _DEFAULT_CLIENT is None:
-        from situation_monitor.ingestion.base import _DefaultClient  # type: ignore[attr-defined]
-        _DEFAULT_CLIENT = _DefaultClient()
+        from situation_monitor.ingestion.http_client import ScrapingClient
+        _DEFAULT_CLIENT = ScrapingClient()
     return _DEFAULT_CLIENT
 
 
