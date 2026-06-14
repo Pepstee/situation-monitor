@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from flask import Flask, Response, abort, jsonify, render_template_string
+from flask import Flask, Response, abort, jsonify, render_template_string, request
 
 _TEMPLATE = """\
 {% autoescape true %}
@@ -155,15 +155,36 @@ def make_app(
     """
     app = Flask(__name__)
 
+    def _domain_filter(domain_param: Optional[str]):
+        """Return a normalised domain name string or None if no filter requested."""
+        return domain_param.upper() if domain_param else None
+
+    def _filter_stories(stories: list, domain: Optional[str]) -> list:
+        if domain is None:
+            return stories
+        return [s for s in stories if s.domain is not None and s.domain.name == domain]
+
+    def _filter_events(events: list, domain: Optional[str]) -> list:
+        if domain is None:
+            return events
+        result = []
+        for event in events:
+            all_articles = event.left_articles + event.right_articles + event.center_articles
+            if any(aa.article.domain is not None and aa.article.domain.name == domain for aa in all_articles):
+                result.append(event)
+        return result
+
     @app.route("/")
     def index() -> str:
-        stories = get_stories()
-        events = get_events() if get_events is not None else []
+        domain = _domain_filter(request.args.get("domain"))
+        stories = _filter_stories(get_stories(), domain)
+        events = _filter_events(get_events() if get_events is not None else [], domain)
         return render_template_string(_TEMPLATE, stories=stories, events=events)
 
     @app.route("/api/events")
     def api_events() -> Response:
-        events = get_events() if get_events is not None else []
+        domain = _domain_filter(request.args.get("domain"))
+        events = _filter_events(get_events() if get_events is not None else [], domain)
         return jsonify([_event_to_dict(e) for e in events])
 
     @app.route("/api/events/<cluster_id>/rationale")
