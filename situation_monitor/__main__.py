@@ -20,10 +20,8 @@ from situation_monitor.config import Config
 from situation_monitor.dashboard import make_app
 from situation_monitor.dedup import deduplicate
 from situation_monitor.domains import classify_domain
-from situation_monitor.ingestion.crypto import CryptoRSSFetcher
+from situation_monitor.ingestion import _select_fetcher
 from situation_monitor.ingestion.discourse_carrier import CarrierDef, DiscourseCarrierFetcher
-from situation_monitor.ingestion.github_trending import GitHubTrendingFetcher
-from situation_monitor.ingestion.hn import HNFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.llm import get_llm_client
 from situation_monitor.models import Article, Domain
@@ -102,16 +100,6 @@ def _resolve_source(source: str) -> str:
     if source == "github_trending://":
         return _GITHUB_TRENDING_DEFAULT_URL
     return source
-
-
-def _select_fetcher(source: str, client=None):
-    if "hn.algolia.com" in source or source.startswith("hn://"):
-        return HNFetcher(client=client)
-    if "github.com/trending" in source or source.startswith("github_trending://"):
-        return GitHubTrendingFetcher(client=client)
-    if "coindesk" in source or "cointelegraph" in source:
-        return CryptoRSSFetcher(client=client)
-    return RSSFetcher(client=client)
 
 
 def _resolve_carrier_roster() -> list[CarrierDef]:
