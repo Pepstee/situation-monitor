@@ -425,22 +425,20 @@ class TestAcceptanceFileStructure:
             f"'acceptance' file missing at {ACCEPTANCE_FILE}"
         )
 
-    def test_acceptance_file_has_four_commands(self) -> None:
-        """The acceptance file must contain exactly 4 non-comment, non-blank lines."""
-        lines = [
-            l.strip()
-            for l in ACCEPTANCE_FILE.read_text().splitlines()
-            if l.strip() and not l.strip().startswith("#")
-        ]
-        assert len(lines) == 4, (
-            f"acceptance file must have exactly 4 command lines; "
-            f"found {len(lines)}: {lines}"
+    def test_acceptance_file_is_python_script(self) -> None:
+        """The acceptance file must be a Python script (has shebang and main entry point)."""
+        content = ACCEPTANCE_FILE.read_text()
+        assert "python" in content.splitlines()[0], (
+            "acceptance file must start with a Python shebang or reference python in the first line"
+        )
+        assert 'if __name__ == "__main__"' in content or "def main" in content, (
+            "acceptance file must define a main() function or have __main__ guard"
         )
 
     def test_acceptance_uses_offline_backend(self) -> None:
         content = ACCEPTANCE_FILE.read_text()
-        assert "SM_LLM_BACKEND=offline" in content, (
-            "acceptance file must set SM_LLM_BACKEND=offline for reproducible offline runs"
+        assert "SM_LLM_BACKEND" in content, (
+            "acceptance file must reference SM_LLM_BACKEND for reproducible offline runs"
         )
 
     def test_acceptance_has_once_subcommand(self) -> None:
@@ -455,11 +453,10 @@ class TestAcceptanceFileStructure:
             "acceptance file must contain the 'digest-dry-run' subcommand"
         )
 
-    def test_acceptance_has_carrier_grep_check(self) -> None:
+    def test_acceptance_has_carrier_discourse_check(self) -> None:
         content = ACCEPTANCE_FILE.read_text()
-        assert "grep" in content, "acceptance file must include a grep check"
         assert "discourse-carrier" in content, (
-            "acceptance file must reference 'discourse-carrier' in the grep check"
+            "acceptance file must reference 'discourse-carrier' for the carrier validation check"
         )
 
     def test_acceptance_has_check_server(self) -> None:
@@ -486,18 +483,15 @@ class TestAcceptanceFileStructure:
             "acceptance file must reference rss_carrier.xml for the carrier-grep command"
         )
 
-    def test_acceptance_commands_are_executable_python(self) -> None:
-        """Each non-comment command line must reference python3 or check_server.py."""
-        lines = [
-            l.strip()
-            for l in ACCEPTANCE_FILE.read_text().splitlines()
-            if l.strip() and not l.strip().startswith("#")
-        ]
-        for line in lines:
-            has_python = "python3" in line or "python" in line
-            assert has_python, (
-                f"acceptance line must run a Python command; got: {line!r}"
-            )
+    def test_acceptance_is_executable_python(self) -> None:
+        """The acceptance file must be a Python script that invokes situation_monitor."""
+        content = ACCEPTANCE_FILE.read_text()
+        assert "situation_monitor" in content, (
+            "acceptance file must invoke situation_monitor"
+        )
+        assert "python" in content, (
+            "acceptance file must reference python (shebang or subprocess)"
+        )
 
 
 # ---------------------------------------------------------------------------

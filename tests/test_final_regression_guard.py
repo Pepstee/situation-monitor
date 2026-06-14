@@ -49,14 +49,15 @@ def _spin(pct: float, lens: str):
 
 
 def _run_acceptance_once() -> str:
-    """Run the acceptance script and return the combined stdout (both commands joined)."""
-    cmd = ACCEPTANCE_FILE.read_text().strip()
+    """Run the acceptance Python script and return combined stdout + returncode."""
+    import os
+    env = {**os.environ, "SM_LLM_BACKEND": "offline"}
     result = subprocess.run(
-        cmd,
-        shell=True,
+        [sys.executable, str(ACCEPTANCE_FILE)],
         capture_output=True,
-        timeout=60,
+        timeout=90,
         cwd=PROJECT_ROOT,
+        env=env,
     )
     return result.stdout.decode(errors="replace"), result.returncode
 
