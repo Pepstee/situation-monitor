@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from situation_monitor.dual_lens import DualLensEvent
+from situation_monitor.models import Domain
 from situation_monitor.practical import PracticalMover
 
 _log = logging.getLogger(__name__)
@@ -56,6 +57,19 @@ def daily_digest(
         for mover in movers[:5]:
             arrow = "▲" if mover.direction == "up" else ("▼" if mover.direction == "down" else "→")
             lines.append(f"• {mover.asset} {arrow} {abs(mover.change_pct):.1f}%")
+
+    ai_articles = []
+    seen_titles: set[str] = set()
+    for event in events:
+        for aa in event.left_articles + event.center_articles + event.right_articles:
+            if aa.article.domain is Domain.AI and aa.article.title not in seen_titles:
+                seen_titles.add(aa.article.title)
+                ai_articles.append(aa.article)
+
+    if ai_articles:
+        lines.append("\n*🤖 AI News*")
+        for art in ai_articles[:5]:
+            lines.append(f"• {art.title}")
 
     return "\n".join(lines)
 
