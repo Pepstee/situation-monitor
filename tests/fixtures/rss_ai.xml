@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>AI Test Feed</title>
+    <link>http://ai.example.com</link>
+    <description>AI/ML RSS fixture for acceptance tests</description>
+    <item>
+      <title>Anthropic Releases New Claude LLM with Improved Reasoning</title>
+      <link>http://ai.example.com/anthropic-claude-llm</link>
+      <description>Anthropic unveiled a new version of its Claude large language model featuring improved reasoning capabilities and reduced hallucination rates.</description>
+      <pubDate>Tue, 02 Jan 2024 08:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>DeepMind Neural Network Achieves State-of-the-Art on Protein Folding</title>
+      <link>http://ai.example.com/deepmind-neural-protein</link>
+      <description>DeepMind's latest neural network architecture sets a new benchmark for protein structure prediction, advancing machine learning in biology.</description>
+      <pubDate>Tue, 02 Jan 2024 09:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>GPT-5 Training Run Reportedly Underway at OpenAI</title>
+      <link>http://ai.example.com/gpt5-openai</link>
+      <description>Reports suggest OpenAI has begun training GPT-5, its next generation large language model, using a significantly larger compute cluster.</description>
+      <pubDate>Tue, 02 Jan 2024 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

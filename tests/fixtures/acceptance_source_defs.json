@@ -3,7 +3,7 @@
         {"url": "tests/fixtures/rss_left.xml", "name": "Left World Source", "domain": "WORLD", "lens": "left"},
         {"url": "tests/fixtures/rss_right.xml", "name": "Right World Source", "domain": "WORLD", "lens": "right"},
         {"url": "tests/fixtures/rss_sample.xml", "name": "World Test Source", "domain": "WORLD", "lens": "centre"},
-        {"url": "tests/fixtures/rss_sample.xml", "name": "Markets Test Source", "domain": "MARKETS", "lens": "centre"},
-        {"url": "tests/fixtures/rss_sample.xml", "name": "AI Test Source", "domain": "AI", "lens": "centre"}
+        {"url": "tests/fixtures/rss_markets.xml", "name": "Markets Test Source", "domain": "MARKETS", "lens": "centre"},
+        {"url": "tests/fixtures/rss_ai.xml", "name": "AI Test Source", "domain": "AI", "lens": "centre"}
     ]
 }
