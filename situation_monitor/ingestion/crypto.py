@@ -17,7 +17,12 @@ class CryptoRSSFetcher(Fetcher):
 
     def fetch(self, url: str = DEFAULT_URL) -> list[Article]:
         raw = self._client.get(url)
-        root = ET.fromstring(raw)
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError:
+            # A flaky feed can return an HTML error page or truncated body;
+            # treat unparseable XML as "no articles" rather than crashing.
+            return []
         channel = root.find("channel")
         if channel is None:
             return []

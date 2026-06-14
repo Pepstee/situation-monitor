@@ -6,6 +6,8 @@ from typing import Callable, Optional
 
 from flask import Flask, Response, abort, jsonify, render_template_string, request
 
+from situation_monitor.urls import safe_url
+
 _TEMPLATE = """\
 {% autoescape true %}
 <!DOCTYPE html>
@@ -59,7 +61,7 @@ _TEMPLATE = """\
         {% for aa in event.left_articles %}
         <div class="article-card">
           <span class="spin-badge">spin_pct: {{ '%.1f' | format(aa.spin.spin_pct) }}%</span>
-          <a href="{{ aa.article.url }}">{{ aa.article.title }}</a><br>
+          <a href="{{ aa.article.url | safe_url }}">{{ aa.article.title }}</a><br>
           <small>{{ aa.article.source }}</small>
         </div>
         {% endfor %}
@@ -70,7 +72,7 @@ _TEMPLATE = """\
         {% for aa in event.right_articles %}
         <div class="article-card">
           <span class="spin-badge">spin_pct: {{ '%.1f' | format(aa.spin.spin_pct) }}%</span>
-          <a href="{{ aa.article.url }}">{{ aa.article.title }}</a><br>
+          <a href="{{ aa.article.url | safe_url }}">{{ aa.article.title }}</a><br>
           <small>{{ aa.article.source }}</small>
         </div>
         {% endfor %}
@@ -97,7 +99,7 @@ _TEMPLATE = """\
     <tbody>
       {% for s in stories %}
       <tr>
-        <td><a href="{{ s.url }}">{{ s.title }}</a></td>
+        <td><a href="{{ s.url | safe_url }}">{{ s.title }}</a></td>
         <td>{{ s.source }}</td>
         <td>{{ s.source_lean or '' }}</td>
         <td>{{ s.source_reliability_label or s.reliability.value }}</td>
@@ -163,6 +165,7 @@ def make_app(
         get_practical: optional callable returning the current list of PracticalMover objects.
     """
     app = Flask(__name__)
+    app.jinja_env.filters["safe_url"] = safe_url
 
     def _domain_filter(domain_param: Optional[str]):
         """Return a normalised domain name string or None if no filter requested."""

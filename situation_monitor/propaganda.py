@@ -50,7 +50,7 @@ _EXCERPT_CHARS = 2000
 
 
 def flag_article(article: Article, client: Callable[[str], str]) -> list[str]:
-    excerpt = article.body[:_EXCERPT_CHARS]
+    excerpt = (article.body or "")[:_EXCERPT_CHARS]
     prompt = _PROMPT_TEMPLATE.format(title=article.title, excerpt=excerpt)
     try:
         raw = client(prompt)
@@ -65,7 +65,7 @@ def flag_article(article: Article, client: Callable[[str], str]) -> list[str]:
 
 def enrich_article(article: Article, client: Callable[[str], str]) -> None:
     """Enrich article in-place: propaganda_flags, loaded_language, propaganda_flag."""
-    excerpt = article.body[:_EXCERPT_CHARS]
+    excerpt = (article.body or "")[:_EXCERPT_CHARS]
     prompt = _ENRICH_PROMPT_TEMPLATE.format(title=article.title, excerpt=excerpt)
     try:
         raw = client(prompt)

@@ -12,6 +12,7 @@ from typing import Optional
 from situation_monitor.dual_lens import DualLensEvent
 from situation_monitor.models import Domain
 from situation_monitor.practical import PracticalMover
+from situation_monitor.urls import safe_url
 
 _log = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ def breaking_ping(
     for art in hot[:5]:
         score = f"{art.relevance_score:.2f}" if art.relevance_score is not None else "?"
         title = art.title.replace("[", "\\[").replace("]", "\\]")
-        lines.append(f"• [{title}]({art.url}) — {art.source} ({score})")
+        lines.append(f"• [{title}]({safe_url(art.url)}) — {art.source} ({score})")
 
     _send_telegram(token, chat, "\n".join(lines))
 
