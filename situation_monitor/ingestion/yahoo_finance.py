@@ -6,7 +6,8 @@ import re
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
-from situation_monitor.ingestion.base import HttpClient, ScrapingClient
+from situation_monitor.ingestion.base import HttpClient
+from situation_monitor.ingestion.http_client import ScrapingClient
 from situation_monitor.models import Article, SourceReliability
 
 _YF_BASE = "https://finance.yahoo.com/quote"

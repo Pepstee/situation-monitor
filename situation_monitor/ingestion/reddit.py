@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from situation_monitor.ingestion.base import HttpClient, ScrapingClient
+from situation_monitor.ingestion.base import HttpClient
+from situation_monitor.ingestion.http_client import ScrapingClient
 from situation_monitor.models import Article, SourceReliability
 
 _BASE = "https://old.reddit.com/r"
