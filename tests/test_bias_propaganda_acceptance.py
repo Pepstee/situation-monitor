@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from situation_monitor.bias import CURATED_BIAS, get_source_lean, get_source_reliability
+from situation_monitor.bias import get_source_lean, get_source_reliability
 from situation_monitor.models import Article
 from situation_monitor.propaganda import enrich_article
 
@@ -141,12 +141,14 @@ class TestBiasLookupSubstringBehavior:
         assert get_source_lean("HTTPS://WWW.BBC.COM/NEWS") == "center"
         assert get_source_reliability("HTTPS://WWW.BBC.COM/NEWS") == "high"
 
-    def test_empty_string_matches_first_dataset_entry(self) -> None:
-        # "" is a substring of every string, so the first dataset entry wins.
-        # This documents actual behaviour (not None).
-        first_key = next(iter(CURATED_BIAS))
-        assert get_source_lean("") == CURATED_BIAS[first_key]["lean"]
-        assert get_source_reliability("") == CURATED_BIAS[first_key]["reliability_tier"]
+    def test_empty_or_trivial_source_resolves_to_no_match(self) -> None:
+        # An empty or single-character source is a substring of nearly every
+        # domain key; it must NOT be mis-attributed to the first curated entry.
+        # A source-less article has no known lean — the lookup returns None.
+        assert get_source_lean("") is None
+        assert get_source_reliability("") is None
+        assert get_source_lean("m") is None
+        assert get_source_reliability("m") is None
 
 
 # ---------------------------------------------------------------------------
