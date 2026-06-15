@@ -100,14 +100,33 @@ ALLSIDES_PRIORS.update(CURATED_BIAS)
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible lookup helpers (unchanged)
+# Backward-compatible lookup helpers
 # ---------------------------------------------------------------------------
+
+# Below this length a source fragment is too generic to attribute reliably: an
+# empty or single-character string is a substring of almost every domain key
+# ("" and "m" are both inside "foxnews.com"), which would silently mis-label a
+# source-less article with the first curated outlet's lean.
+_MIN_MATCH_LEN = 3
+
+
+def _source_matches(source_lower: str, key: str) -> bool:
+    """True when *source_lower* and a curated *key* denote the same outlet.
+
+    Guards the loose bidirectional substring test so trivially short or empty
+    sources fall through to the caller's neutral default rather than spuriously
+    matching the first curated entry.
+    """
+    if len(source_lower) < _MIN_MATCH_LEN:
+        return False
+    return key in source_lower or source_lower in key
+
 
 def get_source_lean(source: str) -> str | None:
     """Return the political lean for a source via case-insensitive substring match."""
     source_lower = source.lower()
     for key, entry in CURATED_BIAS.items():
-        if key in source_lower or source_lower in key:
+        if _source_matches(source_lower, key):
             return entry["lean"]
     return None
 
@@ -116,7 +135,7 @@ def get_source_reliability(source: str) -> str | None:
     """Return the reliability_tier for a source via case-insensitive substring match."""
     source_lower = source.lower()
     for key, entry in CURATED_BIAS.items():
-        if key in source_lower or source_lower in key:
+        if _source_matches(source_lower, key):
             return entry["reliability_tier"]
     return None
 
@@ -165,7 +184,7 @@ def _prior_lean(source: str) -> str:
     """Substring-search ALLSIDES_PRIORS for source lean; default to 'center'."""
     source_lower = source.lower()
     for key, entry in ALLSIDES_PRIORS.items():
-        if key in source_lower or source_lower in key:
+        if _source_matches(source_lower, key):
             return entry["lean"]
     return "center"
 
