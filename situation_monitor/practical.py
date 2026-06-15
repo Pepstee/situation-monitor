@@ -48,7 +48,10 @@ _AP_POLITICS_URL = "https://feeds.apnews.com/rss/apf-politics"
 
 def _parse_rss_items(raw: bytes) -> list[tuple[str, str, Optional[str]]]:
     """Return list of (title, link, pub_date_str) from RSS bytes."""
-    root = ET.fromstring(raw)
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return []
     channel = root.find("channel")
     if channel is None:
         return []

@@ -10,7 +10,12 @@ from situation_monitor.models import Article
 class MastodonFetcher(Fetcher):
     def __init__(self, handle: str, client: HttpClient | None = None) -> None:
         super().__init__(client)
-        user, instance = handle.lstrip("@").split("@", 1)
+        parts = handle.lstrip("@").split("@", 1)
+        if len(parts) != 2:
+            raise ValueError(
+                f"Invalid Mastodon handle {handle!r}: expected 'user@instance' form"
+            )
+        user, instance = parts
         self._username = user
         self._instance = instance
         self._rss = RSSFetcher(client=self._client)
