@@ -67,10 +67,17 @@ class TestOnce:
         assert "Bitcoin Surges" in out or "AI Research Breakthrough" in out
 
     def test_once_exits_zero_via_subprocess(self):
-        """once should exit 0 when sources are readable (claude subprocess fails gracefully)."""
+        """once should exit 0 when sources are readable.
+
+        Pin SM_LLM_BACKEND=offline so the subprocess uses the deterministic,
+        dependency-free backend (llm.py) instead of spawning the live ``claude``
+        binary per article. Inheriting an unset backend let this test reach the
+        network, which made the suite — and the test gate — non-deterministic.
+        Every other pipeline-subprocess test pins offline for the same reason.
+        """
         result = _run_subprocess(
             "once", "--config", "/dev/null",
-            env_extra={"SM_SOURCES": str(FIXTURE_RSS)},
+            env_extra={"SM_SOURCES": str(FIXTURE_RSS), "SM_LLM_BACKEND": "offline"},
         )
         assert result.returncode == 0
 
