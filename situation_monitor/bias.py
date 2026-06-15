@@ -167,6 +167,18 @@ def _as_float(value: object, default: float) -> float:
         return default
 
 
+def _clamp_pct(value: float) -> float:
+    """Clamp a percentage to the declared [0, 100] range.
+
+    Guards against malformed LLM output (out-of-range or non-finite spin_pct)
+    so a hostile response can never render as ``spin_pct: 999.0%`` or push the
+    AI ``hype_vs_substance`` derivation outside [0, 1].
+    """
+    if value != value:  # NaN
+        return 50.0
+    return max(0.0, min(100.0, value))
+
+
 def _try_parse(raw: str) -> dict | None:
     """Extract the first JSON object from an LLM response string."""
     raw = raw.strip()
@@ -246,7 +258,11 @@ class SpinEstimator:
             for k, v in raw_rubric.items()
             if isinstance(v, (int, float)) and not isinstance(v, bool)
         }
-        spin_pct = _as_float(parsed.get("spin_pct"), 50.0)
+        # The schema declares spin_pct as a float 0-100. A malformed or hostile
+        # LLM response (e.g. 999, -50, NaN) must not escape that range — it would
+        # render as "spin_pct: 999.0%" and poison the AI hype_vs_substance
+        # derivation (spin_pct / 100). Clamp to the declared bounds.
+        spin_pct = _clamp_pct(_as_float(parsed.get("spin_pct"), 50.0))
         lens = str(parsed.get("lens") or "center")
 
         fired = [k for k, s in rubric_scores.items() if s > 0.3]
