@@ -1,14 +1,17 @@
 ALERT: title='Government Climate Policy Reform Backed by Scientists' score=1.0000 cluster='c0'
 ALERT: title='Government Climate Policy Reform Threatens Economic Growth' score=1.0000 cluster='c0'
-ALERT: title='Bitcoin Surges Past Key Resistance Level' score=1.0000 cluster='c1'
-ALERT: title='AI Research Breakthrough Reported by DeepMind' score=1.0000 cluster='c2'
-ALERT: title='EUR/USD Falls as Fed Signals Prolonged High Rates' score=1.0000 cluster='c3'
-ALERT: title='Crude Oil Prices Surge on OPEC Supply Cut Extension' score=1.0000 cluster='c4'
-ALERT: title='US Stock Market Rally: S&P 500 Hits Record High on Earnings Beat' score=1.0000 cluster='c5'
-ALERT: title='Anthropic Releases New Claude LLM with Improved Reasoning' score=1.0000 cluster='c6'
-ALERT: title='DeepMind AI Model Sets State-of-the-Art on Protein Folding Benchmark' score=1.0000 cluster='c7'
-ALERT: title='GPT-5 Training Run Reportedly Underway at OpenAI' score=1.0000 cluster='c8'
-# Situation Monitor Digest — 2026-06-15 08:04 UTC
+ALERT: title='Federal Spending Cuts Urged to Reduce Ballooning Budget Deficit' score=1.0000 cluster='c1'
+ALERT: title='Border Security Bill Advances as Migration Crisis Intensifies' score=1.0000 cluster='c2'
+ALERT: title='Bitcoin Surges Past Key Resistance Level' score=1.0000 cluster='c3'
+ALERT: title='AI Research Breakthrough Reported by DeepMind' score=1.0000 cluster='c4'
+ALERT: title='UN Climate Summit Reaches Agreement on Carbon Emission Targets' score=1.0000 cluster='c5'
+ALERT: title='EUR/USD Falls as Fed Signals Prolonged High Rates' score=1.0000 cluster='c6'
+ALERT: title='Crude Oil Prices Surge on OPEC Supply Cut Extension' score=1.0000 cluster='c7'
+ALERT: title='US Stock Market Rally: S&P 500 Hits Record High on Earnings Beat' score=1.0000 cluster='c8'
+ALERT: title='Anthropic Releases New Claude LLM with Improved Reasoning' score=1.0000 cluster='c9'
+ALERT: title='DeepMind AI Model Sets State-of-the-Art on Protein Folding Benchmark' score=1.0000 cluster='c10'
+ALERT: title='GPT-5 Training Run Reportedly Underway at OpenAI' score=1.0000 cluster='c11'
+# Situation Monitor Digest — 2026-06-15 11:40 UTC
 
 ## WORLD
 
@@ -19,51 +22,66 @@ Propaganda: loaded_language, glittering_generalities | Loaded language: True | P
 
 ### Government Climate Policy Reform Threatens Economic Growth
 <http://right-news.example.com/climate-policy-reform>
-Source: Right News Feed | Lean: right | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c0
+Source: Right World Source | Lean: right | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c0
 Propaganda: loaded_language, appeal_to_fear | Loaded language: True | Propaganda flag: True | Polymarket: —
+
+### Federal Spending Cuts Urged to Reduce Ballooning Budget Deficit
+<http://right-news.example.com/spending-cuts-urged>
+Source: Right World Source | Lean: right | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c1
+Propaganda: loaded_language | Loaded language: True | Propaganda flag: True | Polymarket: —
+
+### Border Security Bill Advances as Migration Crisis Intensifies
+<http://right-news.example.com/border-security-bill>
+Source: Right World Source | Lean: right | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c2
+Propaganda: appeal_to_fear | Loaded language: False | Propaganda flag: True | Polymarket: —
+
+### UN Climate Summit Reaches Agreement on Carbon Emission Targets
+<http://example.com/un-climate-summit>
+Source: Test Feed | Lean: centre | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c5
+Propaganda: glittering_generalities | Loaded language: False | Propaganda flag: True | Polymarket: —
 
 ## MARKETS
 
 ### Bitcoin Surges Past Key Resistance Level
 <http://example.com/bitcoin-surge>
-Source: Test Feed | Lean: centre | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c1
+Source: Test Feed | Lean: centre | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c3
 Propaganda: loaded_language | Loaded language: True | Propaganda flag: True | Polymarket: —
 
 ### EUR/USD Falls as Fed Signals Prolonged High Rates
 <http://markets.example.com/eurusd-fed-rates>
-Source: Markets Test Feed | Lean: financial | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c3
+Source: Markets Test Feed | Lean: financial | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c6
 Propaganda: none | Loaded language: False | Propaganda flag: False | Polymarket: —
 
 ### Crude Oil Prices Surge on OPEC Supply Cut Extension
 <http://markets.example.com/crude-oil-opec>
-Source: Markets Test Feed | Lean: financial | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c4
+Source: Markets Test Feed | Lean: financial | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c7
 Propaganda: loaded_language | Loaded language: True | Propaganda flag: True | Polymarket: —
 
 ### US Stock Market Rally: S&P 500 Hits Record High on Earnings Beat
 <http://markets.example.com/sp500-record>
-Source: Markets Test Feed | Lean: financial | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c5
+Source: Markets Test Feed | Lean: financial | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c8
 Propaganda: loaded_language | Loaded language: True | Propaganda flag: True | Polymarket: —
 
 ## AI
 
 ### AI Research Breakthrough Reported by DeepMind
 <http://example.com/ai-breakthrough>
-Source: Test Feed | Lean: centre | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c2
+Source: Test Feed | Lean: centre | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c4
 Propaganda: glittering_generalities | Loaded language: False | Propaganda flag: True | Polymarket: —
 
 ### Anthropic Releases New Claude LLM with Improved Reasoning
 <http://ai.example.com/anthropic-claude-llm>
-Source: AI Test Feed | Lean: tech | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c6
+Source: AI Test Feed | Lean: tech | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c9
 Propaganda: none | Loaded language: False | Propaganda flag: False | Polymarket: —
 
 ### DeepMind AI Model Sets State-of-the-Art on Protein Folding Benchmark
 <http://ai.example.com/deepmind-ai-protein>
-Source: AI Test Feed | Lean: tech | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c7
+Source: AI Test Feed | Lean: tech | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c10
 Propaganda: none | Loaded language: False | Propaganda flag: False | Polymarket: —
 
 ### GPT-5 Training Run Reportedly Underway at OpenAI
 <http://ai.example.com/gpt5-openai>
-Source: AI Test Feed | Lean: tech | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c8
+Source: AI Test Feed | Lean: tech | Reliability tier: — | Reliability: medium | Relevance: 1.00 | Cluster: c11
 Propaganda: none | Loaded language: False | Propaganda flag: False | Polymarket: —
 
 ## DUAL-LENS EVENTS
@@ -79,3 +97,41 @@ spin_delta: 24.8
 - Government Climate Policy Reform Threatens Economic Growth | spin_pct: 68.2%
   rationale: Spin signals fired — Charged Verbs: threatens, destroy, hamper; Fear / Emotional Framing: warn.
 
+### Federal Spending Cuts Urged to Reduce Ballooning Budget Deficit
+spin_delta: 11.0
+
+#### RIGHT (1 article)
+- Federal Spending Cuts Urged to Reduce Ballooning Budget Deficit | spin_pct: 11.0%
+  rationale: Spin signals fired — Loaded Language: sweeping.
+
+### Border Security Bill Advances as Migration Crisis Intensifies
+spin_delta: 69.2
+
+#### RIGHT (1 article)
+- Border Security Bill Advances as Migration Crisis Intensifies | spin_pct: 69.2%
+  rationale: Spin signals fired — Fear / Emotional Framing: crisis, alarm, warned, threats.
+
+*Situation Monitor* — 2026-06-15 11:40 UTC
+
+*Top Stories*
+• Government Climate Policy Reform Threatens Economic Growth ↕25% [L:1, R:1]
+• Federal Spending Cuts Urged to Reduce Ballooning Budget Deficit ↕11% [R:1]
+• Border Security Bill Advances as Migration Crisis Intensifies ↕69% [R:1]
+• Bitcoin Surges Past Key Resistance Level [C:1]
+• AI Research Breakthrough Reported by DeepMind [C:1]
+• UN Climate Summit Reaches Agreement on Carbon Emission Targets [C:1]
+• EUR/USD Falls as Fed Signals Prolonged High Rates [C:1]
+• Crude Oil Prices Surge on OPEC Supply Cut Extension [C:1]
+• US Stock Market Rally: S&P 500 Hits Record High on Earnings Beat [C:1]
+• Anthropic Releases New Claude LLM with Improved Reasoning [C:1]
+
+*🤖 AI News*
+• AI Research Breakthrough Reported by DeepMind
+• Anthropic Releases New Claude LLM with Improved Reasoning
+• DeepMind AI Model Sets State-of-the-Art on Protein Folding Benchmark
+• GPT-5 Training Run Reportedly Underway at OpenAI
+discourse-carrier articles: 2
+web-server-smoke: PASS
+DUAL_LENS: PASS
+SPIN_PCT: 43.4%
+MARKET: PASS
