@@ -233,3 +233,307 @@ def test_gate_result_has_offence_count_in_detail_when_failing(tmp_path: Path) ->
     assert result.passed is False
     # detail must mention how many issues were found
     assert "issue" in result.detail or any(ch.isdigit() for ch in result.detail)
+
+
+# ---------------------------------------------------------------------------
+# 6. All remaining marker keywords are detected
+# ---------------------------------------------------------------------------
+
+
+def test_fixme_marker_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("# FIXME: broken\ndef f(): return 1\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert "FIXME" in result.detail
+
+
+def test_xxx_marker_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("# XXX: danger\ndef f(): return 1\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert "XXX" in result.detail
+
+
+def test_hack_marker_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("# HACK: workaround\ndef f(): return 1\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert "HACK" in result.detail
+
+
+def test_stub_marker_word_in_comment_is_detected(tmp_path: Path) -> None:
+    # STUB as a bare comment keyword (not function-name prefix) must also be flagged
+    (tmp_path / "m.py").write_text("# STUB implementation\ndef f(): return 1\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_marker_keyword_as_substring_is_not_flagged(tmp_path: Path) -> None:
+    # 'retodo' or 'fixmeup' are not the keyword (word-boundary rule)
+    (tmp_path / "m.py").write_text("retodo = 1\nfixmeup = 2\ndef f(): return 1\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, (
+        f"Substrings of marker keywords must not be flagged; detail: {result.detail}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. All fake-name patterns are detected (fake, dummy, placeholder)
+# ---------------------------------------------------------------------------
+
+
+def test_fake_function_name_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("def fake_send(msg):\n    return True\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_dummy_function_name_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("def dummy_handler(req):\n    return None\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_placeholder_function_name_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("def placeholder_compute(x):\n    return x\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_fake_class_name_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("class FakeDB:\n    def query(self): return []\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_dummy_class_name_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("class DummyQueue:\n    def push(self, x): pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_fake_name_case_insensitive(tmp_path: Path) -> None:
+    # _FAKE_NAME_RE uses (?i) so MOCK/Mock/mock all trigger
+    (tmp_path / "m.py").write_text("class MOCK_CLIENT:\n    def get(self): return {}\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+# ---------------------------------------------------------------------------
+# 8. Legitimate abstract patterns are not flagged
+# ---------------------------------------------------------------------------
+
+
+def test_overload_decorator_not_flagged(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text(textwrap.dedent("""\
+        from typing import overload
+
+        @overload
+        def process(x: int) -> int: ...
+
+        @overload
+        def process(x: str) -> str: ...
+
+        def process(x):
+            return x
+    """))
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, (
+        f"@overload stubs must not be flagged; detail: {result.detail}"
+    )
+
+
+def test_protocol_class_not_flagged(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text(textwrap.dedent("""\
+        from typing import Protocol
+
+        class Readable(Protocol):
+            def read(self) -> bytes: ...
+    """))
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, (
+        f"Protocol stub methods must not be flagged; detail: {result.detail}"
+    )
+
+
+def test_abstract_method_with_notimplemented_not_flagged(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text(textwrap.dedent("""\
+        from abc import ABC, abstractmethod
+
+        class Base(ABC):
+            @abstractmethod
+            def run(self):
+                raise NotImplementedError
+    """))
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, (
+        f"abstractmethod with NotImplementedError must not be flagged; detail: {result.detail}"
+    )
+
+
+def test_docstring_only_function_body_is_stub(tmp_path: Path) -> None:
+    # A function whose entire body is just a docstring has no real implementation.
+    # _effective_body strips the docstring leaving an empty list → flagged as stub.
+    (tmp_path / "m.py").write_text(textwrap.dedent("""\
+        def compute():
+            \"\"\"Computes the answer.\"\"\"
+    """))
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False, (
+        "A function whose sole body is a docstring is a stub and must be detected"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. Async functions are scanned the same way as sync functions
+# ---------------------------------------------------------------------------
+
+
+def test_async_pass_only_body_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("async def fetch():\n    pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_async_ellipsis_body_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("async def fetch():\n    ...\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_async_notimplemented_is_detected(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("async def fetch():\n    raise NotImplementedError\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+def test_async_real_implementation_passes(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("async def fetch(url: str) -> bytes:\n    return b'data'\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True
+
+
+# ---------------------------------------------------------------------------
+# 10. Skip directories are honoured
+# ---------------------------------------------------------------------------
+
+
+def test_venv_directory_skipped(tmp_path: Path) -> None:
+    venv = tmp_path / "venv"
+    venv.mkdir()
+    (venv / "bad.py").write_text("def stub_func():\n    pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, "venv/ must be skipped"
+
+
+def test_pycache_directory_skipped(tmp_path: Path) -> None:
+    cache = tmp_path / "__pycache__"
+    cache.mkdir()
+    (cache / "bad.pyc.py").write_text("def mock_func():\n    pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, "__pycache__/ must be skipped"
+
+
+def test_node_modules_skipped(tmp_path: Path) -> None:
+    nm = tmp_path / "node_modules"
+    nm.mkdir()
+    (nm / "bad.py").write_text("# TODO: remove\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, "node_modules/ must be skipped"
+
+
+# ---------------------------------------------------------------------------
+# 11. Test-file exclusion rules (filename-based, not just directory-based)
+# ---------------------------------------------------------------------------
+
+
+def test_test_prefix_file_is_excluded(tmp_path: Path) -> None:
+    # test_foo.py at the top level (no 'tests' dir) must also be excluded
+    (tmp_path / "test_helpers.py").write_text("def mock_db():\n    pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, "test_*.py files must be excluded regardless of directory"
+
+
+def test_test_suffix_file_is_excluded(tmp_path: Path) -> None:
+    (tmp_path / "helpers_test.py").write_text("def stub_http():\n    pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True, "*_test.py files must be excluded"
+
+
+# ---------------------------------------------------------------------------
+# 12. _MAX_REPORTED cap: more than 12 offences are summarised
+# ---------------------------------------------------------------------------
+
+
+def test_max_reported_cap_truncates_detail(tmp_path: Path) -> None:
+    # Create 15 distinct TODO lines in one file → 15 offences; only 12 shown + "+3 more"
+    lines = "\n".join(f"# TODO: item {i}" for i in range(15))
+    lines += "\ndef f(): return 1\n"
+    (tmp_path / "m.py").write_text(lines)
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert "more" in result.detail, (
+        "More than _MAX_REPORTED offences must produce a '+N more' suffix"
+    )
+
+
+def test_twelve_offences_not_truncated(tmp_path: Path) -> None:
+    # Exactly _MAX_REPORTED (12) offences should NOT get a "+ more" suffix
+    lines = "\n".join(f"# TODO: item {i}" for i in range(12))
+    lines += "\ndef f(): return 1\n"
+    (tmp_path / "m.py").write_text(lines)
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert "more" not in result.detail, (
+        "Exactly 12 offences must not produce a '+N more' suffix"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 13. Syntax-error file: marker offences still reported, parse error noted
+# ---------------------------------------------------------------------------
+
+
+def test_syntax_error_file_reports_parse_error(tmp_path: Path) -> None:
+    # A file that does not parse still gets marker offences from the regex pass
+    (tmp_path / "m.py").write_text("# TODO: fix\ndef broken(:\n    pass\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert "TODO" in result.detail or "parse" in result.detail.lower() or "does not parse" in result.detail
+
+
+# ---------------------------------------------------------------------------
+# 14. NotImplementedError call form (with message) is still a stub
+# ---------------------------------------------------------------------------
+
+
+def test_notimplemented_call_with_message_is_stub(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text(textwrap.dedent("""\
+        def compute():
+            raise NotImplementedError("not yet")
+    """))
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+
+
+# ---------------------------------------------------------------------------
+# 15. GateResult fields are well-formed in both pass and fail cases
+# ---------------------------------------------------------------------------
+
+
+def test_gate_name_is_authenticity(tmp_path: Path) -> None:
+    result = scan_authenticity(str(tmp_path))
+    assert result.name == "authenticity"
+
+
+def test_passing_result_detail_is_nonempty(tmp_path: Path) -> None:
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is True
+    assert result.detail, "passing GateResult must have a non-empty detail string"
+
+
+def test_failing_result_detail_is_nonempty(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("# TODO: implement\n")
+    result = scan_authenticity(str(tmp_path))
+    assert result.passed is False
+    assert result.detail, "failing GateResult must have a non-empty detail string"
