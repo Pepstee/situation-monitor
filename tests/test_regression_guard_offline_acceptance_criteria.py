@@ -258,10 +258,15 @@ class TestOfflineAcceptanceExitsZero:
         )
 
     def test_acceptance_uses_sys_executable_not_bare_python(self) -> None:
-        """The acceptance script must use sys.executable — bare 'python' fails on macOS."""
-        content = ACCEPTANCE_FILE.read_text(errors="replace")
+        """acceptance.py must use sys.executable — bare 'python' fails on macOS.
+
+        The portable interpreter reference lives in acceptance.py (the Python
+        pipeline script that spawns the subprocesses). The bare 'acceptance'
+        launcher is a one-line shell command and is intentionally not Python.
+        """
+        content = ACCEPTANCE_PY.read_text(errors="replace")
         assert "sys.executable" in content, (
-            "acceptance file must use sys.executable, not 'python' or 'python3'.\n"
+            "acceptance.py must use sys.executable, not 'python' or 'python3'.\n"
             "On macOS only 'python3' exists; sys.executable is the portable reference."
         )
 

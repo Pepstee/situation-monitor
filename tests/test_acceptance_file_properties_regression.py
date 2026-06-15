@@ -83,33 +83,39 @@ def pipeline_stderr(pipeline_proc: subprocess.CompletedProcess) -> str:
 
 
 class TestAcceptanceFileContainsSysExecutable:
-    """Criterion 1: read the 'acceptance' file; assert 'sys.executable' in its content.
+    """Criterion 1: read 'acceptance.py'; assert 'sys.executable' in its content.
 
-    The file must use sys.executable — not a bare 'python' or 'python3' — so the
-    launcher is portable across environments where only 'python3' exists.
+    Portability lives in 'acceptance.py' — it is the Python script that spawns the
+    pipeline subprocesses, and it must use sys.executable (not a bare 'python' /
+    'python3') so it resolves the active interpreter on macOS / venvs.
+
+    The bare 'acceptance' launcher is, by design, a one-line SHELL command (guarded
+    by test_acceptance_file_format.py); it is NOT Python, so these Python-property
+    assertions target acceptance.py — the file they actually describe. Pointing them
+    at the shell launcher is what caused the historical acceptance<->Python oscillation.
     """
 
     def test_acceptance_file_exists(self) -> None:
         """Prerequisite: without the file there is nothing to read."""
-        assert ACCEPTANCE_FILE.exists(), (
-            f"'acceptance' launcher file missing at {ACCEPTANCE_FILE}"
+        assert ACCEPTANCE_PY.exists(), (
+            f"'acceptance.py' pipeline script missing at {ACCEPTANCE_PY}"
         )
 
     def test_acceptance_file_is_non_empty(self) -> None:
-        content = ACCEPTANCE_FILE.read_text(errors="replace")
+        content = ACCEPTANCE_PY.read_text(errors="replace")
         assert content.strip(), (
-            f"'acceptance' file at {ACCEPTANCE_FILE} is empty"
+            f"'acceptance.py' at {ACCEPTANCE_PY} is empty"
         )
 
     def test_sys_executable_token_in_acceptance_file(self) -> None:
-        """The literal string 'sys.executable' must appear in the acceptance file.
+        """The literal string 'sys.executable' must appear in acceptance.py.
 
         Any other launcher (bare 'python', 'python3', a hardcoded path) would
         break on platforms where the active interpreter is at a non-standard path.
         """
-        content = ACCEPTANCE_FILE.read_text(errors="replace")
+        content = ACCEPTANCE_PY.read_text(errors="replace")
         assert "sys.executable" in content, (
-            "The 'acceptance' file must contain the literal token 'sys.executable'.\n"
+            "'acceptance.py' must contain the literal token 'sys.executable'.\n"
             "Using a bare 'python' or 'python3' breaks on macOS / venvs where only "
             "sys.executable resolves to the correct interpreter.\n"
             f"Actual content:\n{content}"
@@ -117,25 +123,25 @@ class TestAcceptanceFileContainsSysExecutable:
 
     def test_sys_executable_appears_on_a_non_comment_line(self) -> None:
         """'sys.executable' must not be commented out — it must be active code."""
-        content = ACCEPTANCE_FILE.read_text(errors="replace")
+        content = ACCEPTANCE_PY.read_text(errors="replace")
         assert "sys.executable" in content, "prerequisite: token not found"
         active_lines = [
             line for line in content.splitlines()
             if "sys.executable" in line and not line.lstrip().startswith("#")
         ]
         assert active_lines, (
-            "All lines containing 'sys.executable' in the 'acceptance' file are comments.\n"
+            "All lines containing 'sys.executable' in 'acceptance.py' are comments.\n"
             "The token must appear in active, executable code."
         )
 
     def test_sys_import_exists_in_acceptance_file(self) -> None:
         """'import sys' must accompany 'sys.executable' — otherwise it's a NameError."""
-        content = ACCEPTANCE_FILE.read_text(errors="replace")
+        content = ACCEPTANCE_PY.read_text(errors="replace")
         assert "sys.executable" in content, "prerequisite: token not found"
         # Check that sys is imported somewhere in the file
         assert re.search(r"^\s*import sys\b", content, re.MULTILINE) or \
                re.search(r"^\s*from\s+sys\s+import", content, re.MULTILINE), (
-            "The 'acceptance' file uses 'sys.executable' but does not import 'sys'.\n"
+            "'acceptance.py' uses 'sys.executable' but does not import 'sys'.\n"
             "This would raise NameError at runtime."
         )
 
@@ -259,18 +265,19 @@ class TestAcceptanceFileRequiredAndForbiddenContent:
         )
 
     def test_acceptance_file_is_valid_python_syntax(self) -> None:
-        """The 'acceptance' file must be syntactically valid Python.
+        """'acceptance.py' must be syntactically valid Python.
 
-        The file starts with ``#!/usr/bin/env python3`` so it's a Python script.
-        A syntax error would cause it to fail immediately on execution.
+        acceptance.py starts with ``#!/usr/bin/env python3`` and is the Python
+        pipeline script. A syntax error would cause it to fail immediately on
+        execution. (The bare 'acceptance' launcher is a shell command, not Python.)
         """
         import ast
-        content = ACCEPTANCE_FILE.read_text(errors="replace")
+        content = ACCEPTANCE_PY.read_text(errors="replace")
         try:
             ast.parse(content)
         except SyntaxError as exc:
             pytest.fail(
-                f"The 'acceptance' file has a Python syntax error:\n{exc}\n"
+                f"'acceptance.py' has a Python syntax error:\n{exc}\n"
                 f"Content:\n{content}"
             )
 
