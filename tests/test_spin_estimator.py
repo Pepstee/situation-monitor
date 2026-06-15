@@ -297,3 +297,35 @@ class TestAIDomainArticle:
         result = SpinEstimator().estimate_spin(article, _stub(response))
         assert result.hype_vs_substance is not None
         assert 0.0 <= result.hype_vs_substance <= 1.0
+
+
+class TestMalformedRubricShapes:
+    """A hostile-but-valid LLM response may make the ``rubric`` field a non-object
+    (string, list, or null) instead of the dict the schema asks for. The estimator
+    must degrade gracefully to an empty rubric rather than crash on ``.items()``."""
+
+    def test_rubric_as_string_does_not_crash(self) -> None:
+        response = '{"spin_pct": 80, "lens": "left", "rubric": "high"}'
+        result = SpinEstimator().estimate_spin(_article(), _stub(response))
+        assert isinstance(result, SpinResult)
+        assert result.rubric == {}
+        assert result.spin_pct == 80.0
+
+    def test_rubric_as_list_does_not_crash(self) -> None:
+        response = '{"spin_pct": 80, "rubric": [1, 2, 3]}'
+        result = SpinEstimator().estimate_spin(_article(), _stub(response))
+        assert isinstance(result, SpinResult)
+        assert result.rubric == {}
+
+    def test_rubric_as_null_does_not_crash(self) -> None:
+        response = '{"spin_pct": 80, "rubric": null}'
+        result = SpinEstimator().estimate_spin(_article(), _stub(response))
+        assert isinstance(result, SpinResult)
+        assert result.rubric == {}
+
+    def test_rubric_bool_subscore_is_excluded(self) -> None:
+        """A JSON ``true`` is not a numeric subscore; it must be dropped, not
+        coerced to 1.0, so only genuine floats survive into the rubric."""
+        response = '{"spin_pct": 80, "rubric": {"omission": 0.9, "emotional_framing": true}}'
+        result = SpinEstimator().estimate_spin(_article(), _stub(response))
+        assert result.rubric == {"omission": 0.9}

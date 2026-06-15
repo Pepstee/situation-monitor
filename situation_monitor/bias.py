@@ -216,10 +216,16 @@ class SpinEstimator:
         if parsed is None:
             return self._fallback(article, is_ai)
 
+        raw_rubric = parsed.get("rubric", {})
+        # A hostile-but-valid response may make "rubric" a string, list, or null
+        # rather than the object the schema asks for; coerce non-dicts to empty so
+        # the estimator degrades gracefully instead of crashing on .items().
+        if not isinstance(raw_rubric, dict):
+            raw_rubric = {}
         rubric_scores: dict[str, float] = {
             k: float(v)
-            for k, v in parsed.get("rubric", {}).items()
-            if isinstance(v, (int, float))
+            for k, v in raw_rubric.items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
         }
         spin_pct = _as_float(parsed.get("spin_pct"), 50.0)
         lens = str(parsed.get("lens") or "center")
