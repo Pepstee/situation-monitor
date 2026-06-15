@@ -11,9 +11,12 @@ from __future__ import annotations
 import pytest
 
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
+from situation_monitor.ingestion.hn import HNFetcher
+from situation_monitor.ingestion.mastodon import MastodonFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.models import Article
 from situation_monitor.polymarket import PolymarketMatcher
+from situation_monitor.practical import _parse_rss_items
 from situation_monitor.propaganda import enrich_article, flag_article
 
 
@@ -72,3 +75,121 @@ def test_polymarket_matcher_skips_market_with_missing_odds() -> None:
 def test_polymarket_matcher_all_markets_malformed_returns_none() -> None:
     art = Article(url="http://x", title="Fed cuts rates", source="s", body=None)
     assert PolymarketMatcher().match(art, [{"keywords": ["rates"]}]) is None
+
+
+# ---------------------------------------------------------------------------
+# HNFetcher — three crash paths: empty bytes, HTML error page, truncated JSON
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"",
+        b"<html><body><p>503 Service Unavailable</p></body></html>",
+        b'{"hits": [{"title": "truncated article without closing',
+    ],
+    ids=["empty", "html_error_page", "truncated_json"],
+)
+def test_hn_fetcher_survives_malformed_payload(payload: bytes) -> None:
+    fetcher = HNFetcher(client=_StubClient(payload))
+    result = fetcher.fetch("http://api.example/hn")
+    assert result == []
+
+
+def test_hn_fetcher_survives_null_bytes() -> None:
+    fetcher = HNFetcher(client=_StubClient(b"\x00\x01\x02"))
+    assert fetcher.fetch("http://api.example/hn") == []
+
+
+def test_hn_fetcher_survives_json_object_missing_hits() -> None:
+    fetcher = HNFetcher(client=_StubClient(b"{}"))
+    assert fetcher.fetch("http://api.example/hn") == []
+
+
+def test_hn_fetcher_survives_json_with_empty_hits_list() -> None:
+    fetcher = HNFetcher(client=_StubClient(b'{"hits": []}'))
+    assert fetcher.fetch("http://api.example/hn") == []
+
+
+# ---------------------------------------------------------------------------
+# MastodonFetcher — three crash paths: empty bytes, HTML error page, truncated XML
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"",
+        b"<html><body><p>503 Service Unavailable</p></body></html>",
+        b"<rss><channel><item><title>truncated without close",
+    ],
+    ids=["empty", "html_error_page", "truncated_xml"],
+)
+def test_mastodon_fetcher_survives_malformed_payload(payload: bytes) -> None:
+    fetcher = MastodonFetcher("user@mastodon.social", client=_StubClient(payload))
+    result = fetcher.fetch()
+    assert result == []
+
+
+def test_mastodon_fetcher_survives_valid_xml_without_channel() -> None:
+    payload = b"<?xml version='1.0'?><root><data>no channel here</data></root>"
+    fetcher = MastodonFetcher("user@mastodon.social", client=_StubClient(payload))
+    assert fetcher.fetch() == []
+
+
+def test_mastodon_fetcher_survives_json_instead_of_xml() -> None:
+    payload = b'{"error": "account not found"}'
+    fetcher = MastodonFetcher("ghost@mastodon.social", client=_StubClient(payload))
+    assert fetcher.fetch() == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_rss_items — three crash paths: empty bytes, HTML error page, truncated XML
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"",
+        b"<html><body><p>503 Service Unavailable</p></body></html>",
+        b"<rss><channel><item><title>cut off without closing tags",
+    ],
+    ids=["empty", "html_error_page", "truncated_xml"],
+)
+def test_parse_rss_items_survives_malformed_payload(payload: bytes) -> None:
+    result = _parse_rss_items(payload)
+    assert result == []
+
+
+def test_parse_rss_items_survives_not_xml_at_all() -> None:
+    assert _parse_rss_items(b"not xml at all") == []
+
+
+def test_parse_rss_items_survives_binary_garbage() -> None:
+    assert _parse_rss_items(b"\xff\xfe\x00\x01binary") == []
+
+
+def test_parse_rss_items_channel_with_items_missing_title_all_skipped() -> None:
+    payload = b"""<rss version="2.0"><channel>
+      <item><link>http://x.com/1</link></item>
+      <item><link>http://x.com/2</link></item>
+    </channel></rss>"""
+    assert _parse_rss_items(payload) == []
+
+
+def test_parse_rss_items_channel_with_items_missing_link_all_skipped() -> None:
+    payload = b"""<rss version="2.0"><channel>
+      <item><title>No Link</title></item>
+    </channel></rss>"""
+    assert _parse_rss_items(payload) == []
+
+
+def test_parse_rss_items_mixed_valid_and_invalid_items_returns_only_valid() -> None:
+    payload = b"""<rss version="2.0"><channel>
+      <item><title></title><link>http://x.com/1</link></item>
+      <item><title>Good Item</title><link>http://x.com/2</link></item>
+      <item><title>Also Good</title><link></link></item>
+    </channel></rss>"""
+    result = _parse_rss_items(payload)
+    assert len(result) == 1
+    assert result[0][0] == "Good Item"
+    assert result[0][1] == "http://x.com/2"
