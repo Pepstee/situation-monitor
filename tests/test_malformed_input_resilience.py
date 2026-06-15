@@ -13,6 +13,7 @@ import pytest
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.models import Article
+from situation_monitor.polymarket import PolymarketMatcher
 from situation_monitor.propaganda import enrich_article, flag_article
 
 
@@ -45,3 +46,29 @@ def test_propaganda_handles_none_body() -> None:
     # Neither call should raise on a None body.
     assert flag_article(art, lambda _prompt: '{"flags": []}') == []
     enrich_article(art, lambda _prompt: '{"flags": [], "loaded_language": false}')
+
+
+def test_polymarket_matcher_handles_none_body() -> None:
+    # A body-less article must still match on its title, not crash with
+    # "can only concatenate str (not NoneType) to str".
+    art = Article(url="http://x", title="Trump wins the election", source="s")
+    art.body = None
+    odds = PolymarketMatcher().match(art, [{"keywords": ["election"], "odds": 0.6}])
+    assert odds == 0.6
+
+
+def test_polymarket_matcher_skips_market_with_missing_odds() -> None:
+    # A malformed market record (no "odds", or non-numeric) must be skipped,
+    # not raise — a later well-formed match should still win.
+    art = Article(url="http://x", title="Fed cuts rates", source="s", body="rate news")
+    markets = [
+        {"keywords": ["rates"]},                       # missing "odds" → KeyError
+        {"keywords": ["rates"], "odds": "not-a-number"},  # bad value → ValueError
+        {"keywords": ["rates"], "odds": 0.42},          # good → wins
+    ]
+    assert PolymarketMatcher().match(art, markets) == 0.42
+
+
+def test_polymarket_matcher_all_markets_malformed_returns_none() -> None:
+    art = Article(url="http://x", title="Fed cuts rates", source="s", body=None)
+    assert PolymarketMatcher().match(art, [{"keywords": ["rates"]}]) is None
