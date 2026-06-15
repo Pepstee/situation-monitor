@@ -123,7 +123,7 @@ def main() -> None:
     r1 = ""
     rc = 1
 
-    if _network_ok():
+    if os.environ.get("SM_LLM_BACKEND") != "offline" and _network_ok():
         r1, rc = _run_once_live()
 
     if rc != 0 or not _has_all_required(r1):
