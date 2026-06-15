@@ -33,6 +33,10 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+_ORCH_ROOT = Path(__file__).parent.parent.parent.parent
+if str(_ORCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ORCH_ROOT))
+
 # Backends that reach the network or a local binary — exactly the ones that make
 # the suite non-deterministic and the test gate oscillate (project memory:
 # "Live-claude flaky test gate").  ``setdefault`` alone is not enough: when the
