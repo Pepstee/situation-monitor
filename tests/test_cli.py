@@ -105,8 +105,8 @@ class TestOnce:
         with patch("situation_monitor.__main__.get_llm_client", side_effect=_factory):
             main(["once", "--config", "/dev/null"])
 
-        # Fixture has exactly 2 articles; each triggers one LLM call for propaganda detection.
-        assert len(llm_calls) == 2
+        # Fixture has exactly 3 articles; each triggers one LLM call for propaganda detection.
+        assert len(llm_calls) == 3
 
     def test_once_with_no_sources_prints_no_stories(self, monkeypatch, capsys):
         """With no sources configured, once should report 'No stories found'."""

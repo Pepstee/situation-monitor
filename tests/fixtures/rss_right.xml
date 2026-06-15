@@ -1,14 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Right News Feed</title>
+    <title>Right World Source</title>
     <link>http://right-news.example.com</link>
-    <description>Right-leaning news fixture for acceptance tests</description>
+    <description>Right-leaning world news fixture for acceptance tests</description>
     <item>
       <title>Government Climate Policy Reform Threatens Economic Growth</title>
       <link>http://right-news.example.com/climate-policy-reform</link>
       <description>Business groups warn that proposed government climate policy reform will destroy jobs and hamper economic growth across key sectors.</description>
+      <guid>http://right-news.example.com/climate-policy-reform-001</guid>
       <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Federal Spending Cuts Urged to Reduce Ballooning Budget Deficit</title>
+      <link>http://right-news.example.com/spending-cuts-urged</link>
+      <description>Conservative fiscal watchdogs and lawmakers urge sweeping federal spending cuts to address the growing national deficit and reduce government waste in discretionary programmes.</description>
+      <guid>http://right-news.example.com/spending-cuts-urged-002</guid>
+      <pubDate>Mon, 01 Jan 2024 13:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Border Security Bill Advances as Migration Crisis Intensifies</title>
+      <link>http://right-news.example.com/border-security-bill</link>
+      <description>Legislation strengthening border enforcement advanced in the Senate as alarm over the migration crisis grows and lawmakers warned of threats to border communities.</description>
+      <guid>http://right-news.example.com/border-security-bill-003</guid>
+      <pubDate>Mon, 01 Jan 2024 14:00:00 +0000</pubDate>
     </item>
   </channel>
 </rss>
