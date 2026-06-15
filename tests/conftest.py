@@ -18,7 +18,9 @@ Two responsibilities:
 
    Subprocess-based tests that spawn a fresh interpreter set ``SM_LLM_BACKEND``
    in the child's environment themselves; this only governs in-process code that
-   reads the ambient environment via ``Config.from_file``.
+   reads the ambient environment via ``Config.from_file``.  Because we also
+   normalise ``os.environ`` here, those children inherit the hermetic value too
+   unless they override it on purpose.
 """
 
 from __future__ import annotations
@@ -31,6 +33,19 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# Set at import (collection) time so any Config built during collection is
-# already hermetic.  Respect an explicit choice if the operator set one.
-os.environ.setdefault("SM_LLM_BACKEND", "offline")
+# Backends that reach the network or a local binary — exactly the ones that make
+# the suite non-deterministic and the test gate oscillate (project memory:
+# "Live-claude flaky test gate").  ``setdefault`` alone is not enough: when the
+# gate runs the suite inside the daemon's environment, a leaked
+# ``SM_LLM_BACKEND=claude`` (the orchestrator's own default) is *already set*, so
+# setdefault respects it and every pipeline subprocess that inherits the ambient
+# env shells out to the live ``claude`` binary — flaky, slow, network-bound.  No
+# in-process test needs a live backend (they mock ``get_llm_client``, pin
+# offline, or only string-check), so force a hermetic backend whenever the
+# ambient one would hit the network/binary.  An explicit *hermetic* choice
+# (offline/stub/deterministic) is still respected.
+_NETWORKED_BACKENDS = {"claude", "ollama"}
+if os.environ.get("SM_LLM_BACKEND", "").strip().lower() in _NETWORKED_BACKENDS:
+    os.environ["SM_LLM_BACKEND"] = "offline"
+else:
+    os.environ.setdefault("SM_LLM_BACKEND", "offline")
