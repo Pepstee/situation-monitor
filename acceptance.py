@@ -46,9 +46,34 @@ def _run(*args: str, env: dict | None = None, capture: bool = False) -> subproce
 
 def main() -> None:
     # Cmd 1: once — full digest (WORLD / MARKETS / AI + dual-lens events + spin_pct annotations)
-    r1 = _run("once")
+    r1 = _run("once", capture=True)
+    if r1.stdout:
+        sys.stdout.write(r1.stdout)
+        sys.stdout.flush()
     if r1.returncode != 0:
+        if r1.stderr:
+            sys.stderr.write(r1.stderr)
         sys.exit(r1.returncode)
+
+    # Scan once stdout for verdict markers; write verdict_brief.txt
+    dual_lens_ok = "DUAL-LENS EVENTS" in r1.stdout
+    spin_pct_ok = "spin_pct:" in r1.stdout
+    market_ok = "## MARKETS" in r1.stdout
+    (_ROOT / "verdict_brief.txt").write_text(
+        f"DUAL_LENS: {'Y' if dual_lens_ok else 'N'}\n"
+        f"SPIN_PCT: {'Y' if spin_pct_ok else 'N'}\n"
+        f"MARKET: {'Y' if market_ok else 'N'}\n"
+    )
+    if not (dual_lens_ok and spin_pct_ok and market_ok):
+        failed = [
+            k for k, ok in [
+                ("DUAL_LENS", dual_lens_ok),
+                ("SPIN_PCT", spin_pct_ok),
+                ("MARKET", market_ok),
+            ] if not ok
+        ]
+        print(f"ERROR: verdict checks failed: {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
 
     # Cmd 2: digest-dry-run — Telegram format (independent subprocess)
     r2 = _run("digest-dry-run")
@@ -71,6 +96,7 @@ def main() -> None:
         print("ERROR: no 'discourse-carrier' line in carrier once output", file=sys.stderr)
         sys.exit(1)
     print(carrier_lines[0])
+    sys.stdout.flush()
 
     # Cmd 4: check_server.py — Flask smoke test
     r4 = subprocess.run(

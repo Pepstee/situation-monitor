@@ -261,13 +261,13 @@ class TestDelegation:
         assert len(client.calls) == 2
 
     def test_rss_parsing_produces_correct_article_count(self) -> None:
-        # rss_sample.xml has 2 items; verify delegation passes them through
+        # rss_sample.xml has 3 items; verify delegation passes them through
         client = StubHttpClient(payload=_rss_bytes("rss_sample.xml"))
         fetcher = NitterFetcher("user", client=client)
 
         articles = fetcher.fetch()
 
-        assert len(articles) == 2
+        assert len(articles) == 3
 
     def test_rss_parsing_produces_correct_article_count_left_fixture(self) -> None:
         # rss_left.xml has 1 item

@@ -8,13 +8,22 @@
       <title>Bitcoin Surges Past Key Resistance Level</title>
       <link>http://example.com/bitcoin-surge</link>
       <description>Bitcoin and cryptocurrency markets saw significant movement today as BTC broke through resistance.</description>
+      <guid>http://example.com/bitcoin-surge-001</guid>
       <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
     </item>
     <item>
       <title>AI Research Breakthrough Reported by DeepMind</title>
       <link>http://example.com/ai-breakthrough</link>
       <description>Artificial general intelligence research advances as DeepMind publishes new findings on superintelligence.</description>
+      <guid>http://example.com/ai-breakthrough-002</guid>
       <pubDate>Tue, 02 Jan 2024 09:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>UN Climate Summit Reaches Agreement on Carbon Emission Targets</title>
+      <link>http://example.com/un-climate-summit</link>
+      <description>World leaders at the UN climate summit reached a landmark agreement on carbon emission reduction targets, with major economies pledging deeper cuts by 2030.</description>
+      <guid>http://example.com/un-climate-summit-003</guid>
+      <pubDate>Wed, 03 Jan 2024 08:00:00 +0000</pubDate>
     </item>
   </channel>
 </rss>
