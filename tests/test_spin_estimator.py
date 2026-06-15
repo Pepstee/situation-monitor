@@ -100,6 +100,44 @@ class TestSpinPctRange:
         assert 0.0 <= result.spin_pct <= 1.0
 
 
+class TestMalformedNumericFields:
+    """Valid JSON carrying non-numeric values must degrade gracefully, not crash."""
+
+    def test_string_spin_pct_does_not_crash(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": "high", "lens": "left"}')
+        )
+        assert isinstance(result, SpinResult)
+        assert isinstance(result.spin_pct, float)
+
+    def test_null_spin_pct_falls_back_to_default(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": null, "lens": "center"}')
+        )
+        assert isinstance(result, SpinResult)
+        assert result.spin_pct == pytest.approx(50.0)
+
+    def test_bool_spin_pct_does_not_pass_through_as_one(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": true, "lens": "center"}')
+        )
+        assert isinstance(result, SpinResult)
+        assert result.spin_pct == pytest.approx(50.0)
+
+    def test_null_lens_does_not_become_literal_none_string(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": 0.4, "lens": null}')
+        )
+        assert isinstance(result, SpinResult)
+        assert result.lens == "center"
+
+    def test_numeric_string_spin_pct_is_coerced(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": "42.5", "lens": "right"}')
+        )
+        assert result.spin_pct == pytest.approx(42.5)
+
+
 class TestRubricKeys:
     def test_rubric_has_four_expected_keys(self) -> None:
         result = SpinEstimator().estimate_spin(_article(), _stub(_make_response()))
