@@ -16,8 +16,21 @@ from pathlib import Path
 
 import pytest
 
-# The conftest at tests/situation_monitor/conftest.py adds the orchestrator root
-# to sys.path, making 'validation' importable.
+# Add the orchestrator root to sys.path so 'validation' is importable regardless
+# of PYTHONPATH or conftest depth (this file may live inside a worktree where
+# the conftest cannot compute the correct depth automatically).
+def _find_orch_root() -> Path:
+    p = Path(__file__).resolve().parent
+    while p.parent != p:
+        if (p / "validation" / "authenticity.py").exists():
+            return p
+        p = p.parent
+    raise RuntimeError(f"Cannot locate orchestrator root from {__file__}")
+
+_orch_root = _find_orch_root()
+if str(_orch_root) not in sys.path:
+    sys.path.insert(0, str(_orch_root))
+
 from validation.authenticity import scan_authenticity
 from validation.gates import GateResult
 
