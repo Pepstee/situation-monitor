@@ -9,11 +9,20 @@ from situation_monitor.models import Article
 
 class PolymarketMatcher:
     def match(self, article: Article, markets: list[dict]) -> float | None:
-        text = (article.title + " " + article.body).lower()
+        # article.body may be None (upstream feeds leave it unset); guard it the
+        # same way PolymarketClient.match and the rest of the pipeline do, so a
+        # body-less article degrades to a title-only match instead of crashing
+        # with "can only concatenate str (not NoneType) to str".
+        text = (article.title + " " + (article.body or "")).lower()
         for market in markets:
             keywords: list[str] = market.get("keywords", [])
             if any(kw.lower() in text for kw in keywords):
-                return float(market["odds"])
+                # A malformed market record may omit "odds" or carry a
+                # non-numeric value; skip it rather than raising.
+                try:
+                    return float(market["odds"])
+                except (KeyError, TypeError, ValueError):
+                    continue
         return None
 
 
