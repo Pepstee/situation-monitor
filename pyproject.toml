@@ -15,5 +15,5 @@ build-backend = "setuptools.build_meta"
 include = ["situation_monitor*"]
 
 [tool.pytest.ini_options]
-addopts = "--import-mode=importlib"
+addopts = "--import-mode=importlib --tb=short"
 pythonpath = ["."]
