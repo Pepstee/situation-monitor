@@ -133,6 +133,21 @@ _RUBRIC_LABELS: dict[str, str] = {
 }
 
 
+def _as_float(value: object, default: float) -> float:
+    """Coerce an arbitrary LLM-supplied value to float, falling back on bad input.
+
+    Booleans are rejected (a JSON ``true`` is not a numeric spin score) so a
+    malformed-but-valid response like ``{"spin_pct": "high"}`` degrades to the
+    default instead of crashing the estimator.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _try_parse(raw: str) -> dict | None:
     """Extract the first JSON object from an LLM response string."""
     raw = raw.strip()
@@ -206,8 +221,8 @@ class SpinEstimator:
             for k, v in parsed.get("rubric", {}).items()
             if isinstance(v, (int, float))
         }
-        spin_pct = float(parsed.get("spin_pct", 50.0))
-        lens = str(parsed.get("lens", "center"))
+        spin_pct = _as_float(parsed.get("spin_pct"), 50.0)
+        lens = str(parsed.get("lens") or "center")
 
         fired = [k for k, s in rubric_scores.items() if s > 0.3]
         if fired:
