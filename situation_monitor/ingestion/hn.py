@@ -17,7 +17,10 @@ class HNFetcher(Fetcher):
 
     def fetch(self, url: str = DEFAULT_URL) -> list[Article]:
         raw = self._client.get(url)
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
         articles: list[Article] = []
         for hit in data.get("hits", []):
             title = (hit.get("title") or "").strip()
