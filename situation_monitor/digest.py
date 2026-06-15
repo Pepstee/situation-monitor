@@ -18,6 +18,21 @@ _log = logging.getLogger(__name__)
 
 _TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
+# Telegram's legacy "Markdown" parse_mode treats these as entity delimiters.
+# An unescaped one in interpolated text — e.g. a lone '*' in a headline like
+# "Profits up 5* this year", or an underscore in a handle — leaves the markup
+# unbalanced, so Telegram rejects the WHOLE message with HTTP 400 and the digest
+# or breaking alert is silently lost. Escape every occurrence in untrusted text;
+# structural markers (the '*' we emit deliberately) are written literally.
+_MD_SPECIALS = ("_", "*", "`", "[", "]")
+
+
+def _md_escape(text: str) -> str:
+    """Backslash-escape Telegram-Markdown delimiters in interpolated text."""
+    for ch in _MD_SPECIALS:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
 
 def daily_digest(
     events: list[DualLensEvent],
@@ -49,7 +64,7 @@ def daily_digest(
             if event.right_articles:
                 parts.append(f"R:{len(event.right_articles)}")
             lens_str = f" [{', '.join(parts)}]" if parts else ""
-            lines.append(f"• {event.event_title}{delta_str}{lens_str}")
+            lines.append(f"• {_md_escape(event.event_title)}{delta_str}{lens_str}")
     else:
         lines.append("_No events found._")
 
@@ -57,7 +72,7 @@ def daily_digest(
         lines.append("\n*Market Movers*")
         for mover in movers[:5]:
             arrow = "▲" if mover.direction == "up" else ("▼" if mover.direction == "down" else "→")
-            lines.append(f"• {mover.asset} {arrow} {abs(mover.change_pct):.1f}%")
+            lines.append(f"• {_md_escape(mover.asset)} {arrow} {abs(mover.change_pct):.1f}%")
 
     ai_articles = []
     seen_titles: set[str] = set()
@@ -70,7 +85,7 @@ def daily_digest(
     if ai_articles:
         lines.append("\n*🤖 AI News*")
         for art in ai_articles[:5]:
-            lines.append(f"• {art.title}")
+            lines.append(f"• {_md_escape(art.title)}")
 
     return "\n".join(lines)
 
@@ -109,8 +124,9 @@ def breaking_ping(
     lines = [f"🚨 *Breaking* — {len(hot)} high-significance event(s)\n"]
     for art in hot[:5]:
         score = f"{art.relevance_score:.2f}" if art.relevance_score is not None else "?"
-        title = art.title.replace("[", "\\[").replace("]", "\\]")
-        lines.append(f"• [{title}]({safe_url(art.url)}) — {art.source} ({score})")
+        title = _md_escape(art.title)
+        source = _md_escape(art.source)
+        lines.append(f"• [{title}]({safe_url(art.url)}) — {source} ({score})")
 
     _send_telegram(token, chat, "\n".join(lines))
 

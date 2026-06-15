@@ -189,6 +189,21 @@ class TestDailyDigestDualLensSection:
         result = daily_digest([], [])
         assert "*Situation Monitor*" in result
 
+    def test_event_title_markdown_specials_escaped(self):
+        """An event title with a lone '*' must not corrupt the digest Markdown."""
+        aa = _annotated("Fed *slams* banks over 5* bonus_pool today", "cnn.com", 80.0, "left")
+        event = _event("Fed *slams* banks over 5* bonus_pool today", left=[aa], spin_delta=0.0)
+        result = daily_digest([event], [])
+        assert "Fed \\*slams\\* banks over 5\\* bonus\\_pool today" in result
+        # The structural Top Stories marker stays a real, unescaped bold marker.
+        assert "*Top Stories*" in result
+
+    def test_mover_asset_markdown_specials_escaped(self):
+        """A mover asset name carrying a delimiter must be escaped, not emitted raw."""
+        result = daily_digest([], [_mover("S&P_500 *index*", 1.5, "up")])
+        assert "S&P\\_500 \\*index\\*" in result
+        assert "*Market Movers*" in result
+
     def test_no_bracket_when_all_articles_missing(self):
         """An event with no articles in any bucket shows no [L:… R:… C:…] block."""
         event = _event("Empty event no articles anywhere")
@@ -533,6 +548,48 @@ class TestBreakingPingThresholdGate:
         body = json.loads(captured["data"].decode())
         # Raw unescaped [ or ] inside the link text would break Markdown
         assert r"\[Update\]" in body["text"] or "\\[" in body["text"]
+
+    def test_all_markdown_specials_in_title_are_escaped(self, monkeypatch):
+        """A lone '*' or '_' (not just brackets) in a headline must be escaped, or
+        Telegram rejects the whole message with HTTP 400 and the alert is lost."""
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        art = _article(
+            "Profits up 5* after CEO_resigns and `code` ships now",
+            relevance_score=0.92,
+            url="https://example.com/story",
+        )
+        captured: dict = {}
+
+        def _capture_req(req, **kwargs):
+            captured["data"] = req.data
+            return self._mock_urlopen_context()
+
+        with patch("urllib.request.urlopen", side_effect=_capture_req):
+            breaking_ping([art], threshold=0.85, bot_token="faketoken", chat_id="123")
+
+        sent_text = json.loads(captured["data"].decode())["text"]
+        # Every delimiter inside the interpolated title must be backslash-escaped.
+        assert "5\\*" in sent_text
+        assert "CEO\\_resigns" in sent_text
+        assert "\\`code\\`" in sent_text
+        # No bare, unescaped '*' survives from the title (URL is now delimiter-free).
+        assert "5*" not in sent_text.replace("5\\*", "")
+
+    def test_markdown_specials_in_source_are_escaped(self, monkeypatch):
+        """The source name is interpolated too — an '_' in it must be escaped."""
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        art = _article("Plain title here today", source="we_love_news.com", relevance_score=0.92)
+        captured: dict = {}
+
+        def _capture_req(req, **kwargs):
+            captured["data"] = req.data
+            return self._mock_urlopen_context()
+
+        with patch("urllib.request.urlopen", side_effect=_capture_req):
+            breaking_ping([art], threshold=0.85, bot_token="faketoken", chat_id="123")
+
+        sent_text = json.loads(captured["data"].decode())["text"]
+        assert "we\\_love\\_news.com" in sent_text
 
     def test_send_failure_does_not_raise(self, monkeypatch):
         """_send_telegram must swallow network errors, never propagate them."""
