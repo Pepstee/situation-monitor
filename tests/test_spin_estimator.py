@@ -138,6 +138,43 @@ class TestMalformedNumericFields:
         assert result.spin_pct == pytest.approx(42.5)
 
 
+class TestSpinPctClampedToDeclaredRange:
+    """spin_pct is declared 0-100; a hostile/malformed value must be clamped.
+
+    The schema promises ``"spin_pct": <float 0-100>``. An out-of-range value
+    must never escape the estimator — it would render as ``spin_pct: 999.0%``
+    and push the AI ``hype_vs_substance`` derivation (spin_pct / 100) outside
+    its own [0, 1] contract.
+    """
+
+    def test_above_hundred_is_clamped_to_hundred(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": 999, "lens": "right"}')
+        )
+        assert result.spin_pct == pytest.approx(100.0)
+
+    def test_negative_is_clamped_to_zero(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": -50, "lens": "left"}')
+        )
+        assert result.spin_pct == pytest.approx(0.0)
+
+    def test_in_range_value_passes_through_unchanged(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(), _stub('{"spin_pct": 73.5, "lens": "center"}')
+        )
+        assert result.spin_pct == pytest.approx(73.5)
+
+    def test_ai_hype_stays_within_unit_interval_for_extreme_spin(self) -> None:
+        result = SpinEstimator().estimate_spin(
+            _article(domain=Domain.AI),
+            _stub('{"spin_pct": 5000, "lens": "center"}'),
+        )
+        assert result.spin_pct == pytest.approx(100.0)
+        assert result.hype_vs_substance is not None
+        assert 0.0 <= result.hype_vs_substance <= 1.0
+
+
 class TestRubricKeys:
     def test_rubric_has_four_expected_keys(self) -> None:
         result = SpinEstimator().estimate_spin(_article(), _stub(_make_response()))
