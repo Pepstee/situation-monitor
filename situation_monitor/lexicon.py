@@ -110,6 +110,13 @@ class SpinScore:
 
 
 def _tokenise(text: str) -> list[str]:
+    # A missing or hostile field may arrive as None (or any non-string) rather
+    # than the str the signature asks for; tokenising None would raise
+    # AttributeError on .lower() and crash the scorer. Treat absent/ill-typed
+    # text as empty so the deterministic scorer degrades to a neutral 0.0 score
+    # instead of taking down the whole spin estimate.
+    if not isinstance(text, str):
+        return []
     return re.findall(r"[a-z][a-z'-]*", text.lower())
 
 
