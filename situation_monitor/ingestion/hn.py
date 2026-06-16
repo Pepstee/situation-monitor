@@ -33,11 +33,14 @@ class HNFetcher(Fetcher):
                 continue
             published_at: datetime | None = None
             if created_at := hit.get("created_at"):
+                # A hostile feed may set created_at to a non-string (int/list),
+                # making .replace() raise AttributeError; degrade to a null
+                # timestamp rather than crashing the whole fetch.
                 try:
                     published_at = datetime.fromisoformat(
                         created_at.replace("Z", "+00:00")
                     )
-                except ValueError:
+                except (ValueError, AttributeError, TypeError):
                     pass
             articles.append(
                 Article(

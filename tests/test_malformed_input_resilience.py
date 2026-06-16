@@ -8,11 +8,15 @@ these should raise — the fetcher yields no articles and the analyser proceeds.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from situation_monitor.ingestion.bluesky import BlueskyFetcher
 from situation_monitor.ingestion.crypto import CryptoRSSFetcher
 from situation_monitor.ingestion.hn import HNFetcher
 from situation_monitor.ingestion.mastodon import MastodonFetcher
+from situation_monitor.ingestion.reddit import RedditScraper
 from situation_monitor.ingestion.rss import RSSFetcher
 from situation_monitor.models import Article
 from situation_monitor.polymarket import PolymarketMatcher
@@ -181,6 +185,42 @@ def test_parse_rss_items_channel_with_items_missing_link_all_skipped() -> None:
       <item><title>No Link</title></item>
     </channel></rss>"""
     assert _parse_rss_items(payload) == []
+
+
+# ---------------------------------------------------------------------------
+# Hostile timestamps — a feed-supplied created/indexed field may be infinite,
+# out-of-range, or a non-numeric/non-string type. The fetcher must drop the
+# timestamp, not crash on OverflowError / TypeError / AttributeError.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("created_utc", [1e999, [1, 2], {"x": 1}, "not-a-number"])
+def test_reddit_scraper_survives_hostile_created_utc(created_utc: object) -> None:
+    payload = json.dumps(
+        {"data": {"children": [{"data": {"title": "T", "url": "http://x", "created_utc": created_utc}}]}}
+    ).encode()
+    arts = RedditScraper(client=_StubClient(payload)).fetch("news")
+    assert len(arts) == 1
+    assert arts[0].published_at is None
+
+
+@pytest.mark.parametrize("created_at", [12345, [1, 2], {"x": 1}, "garbage"])
+def test_hn_fetcher_survives_hostile_created_at(created_at: object) -> None:
+    payload = json.dumps(
+        {"hits": [{"title": "T", "url": "http://x", "created_at": created_at}]}
+    ).encode()
+    arts = HNFetcher(client=_StubClient(payload)).fetch("http://api.example/hn")
+    assert len(arts) == 1
+    assert arts[0].published_at is None
+
+
+@pytest.mark.parametrize("indexed_at", [12345, [1, 2], {"x": 1}, "garbage"])
+def test_bluesky_fetcher_survives_hostile_indexed_at(indexed_at: object) -> None:
+    payload = json.dumps(
+        {"feed": [{"post": {"record": {"text": "T"}, "uri": "a/b/rkey", "indexedAt": indexed_at}}]}
+    ).encode()
+    arts = BlueskyFetcher("handle.test", client=_StubClient(payload)).fetch()
+    assert len(arts) == 1
+    assert arts[0].published_at is None
 
 
 def test_parse_rss_items_mixed_valid_and_invalid_items_returns_only_valid() -> None:

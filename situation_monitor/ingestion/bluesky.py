@@ -38,11 +38,14 @@ class BlueskyFetcher(Fetcher):
 
             published_at: datetime | None = None
             if indexed_at := post.get("indexedAt"):
+                # A hostile feed may set indexedAt to a non-string (int/list),
+                # making .replace() raise AttributeError; degrade to a null
+                # timestamp rather than crashing the whole fetch.
                 try:
                     published_at = datetime.fromisoformat(
                         indexed_at.replace("Z", "+00:00")
                     )
-                except ValueError:
+                except (ValueError, AttributeError, TypeError):
                     pass
 
             articles.append(
