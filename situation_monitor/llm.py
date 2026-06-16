@@ -67,9 +67,10 @@ def get_llm_client(
 
         def _offline(prompt: str) -> str:
             score = _offline_relevance(prompt)
-            # Non-relevance prompts (spin/propaganda) derive their own deterministic
-            # signal elsewhere; keep their neutral default unchanged.
-            return json.dumps({"score": 0.5 if score is None else score})
+            if score is None:
+                # Non-relevance prompts (spin/propaganda) — return neutral default
+                return "0.5"
+            return str(score)
 
         return _offline
 
