@@ -28,6 +28,7 @@ from situation_monitor.models import Article, Domain
 from situation_monitor.alerting import check_and_emit_alerts
 from situation_monitor.polymarket import PolymarketClient, PolymarketMatcher
 from situation_monitor.propaganda import apply_lexicon_baseline, enrich_article
+from situation_monitor.sanitiser import sanitise_article
 from situation_monitor.relevance import score_relevance
 from situation_monitor.reliability import ReliabilityTracker
 from situation_monitor.urls import safe_url
@@ -190,6 +191,7 @@ def _ingest_and_enrich(config: Config) -> list[Article]:
             print(f"Warning: carrier feed {carrier.url!r}: {exc}", file=sys.stderr)
 
     articles = deduplicate(articles)
+    articles = [sanitise_article(a) for a in articles]
 
     # Classify each surviving article into its section by CONTENT, not just by the
     # feed it arrived on. URL-dedup keeps one copy of a story shared across feeds;

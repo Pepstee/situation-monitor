@@ -132,6 +132,7 @@ class Config:
     source_defs: list[SourceDef] = field(default_factory=list)
     telegram_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    sanitiser_model: str = "qwen3:8b"
 
     def __repr__(self) -> str:
         return (
