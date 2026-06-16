@@ -139,12 +139,23 @@ def group_by_event(
             else:
                 center.append(aa)
 
+        # spin_delta measures divergence *between opposing framings*. It is only
+        # defined when both a left and a right lens cover the event: with a single
+        # side there is no opposing framing to diverge from, so an empty bucket's
+        # 0.0 average must not be mistaken for "the other side framed it at zero".
+        # Reporting the lone side's average as a delta would inflate the headline
+        # metric for single-sourced events. No opposing pair → no measurable delta.
+        if left and right:
+            spin_delta = abs(_avg_spin(left) - _avg_spin(right))
+        else:
+            spin_delta = 0.0
+
         events.append(DualLensEvent(
             event_title=event_title,
             left_articles=left,
             right_articles=right,
             center_articles=center,
-            spin_delta=abs(_avg_spin(left) - _avg_spin(right)),
+            spin_delta=spin_delta,
         ))
 
     return events

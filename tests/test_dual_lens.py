@@ -427,17 +427,24 @@ class TestSpinDelta:
         assert len(result) == 1
         assert result[0].spin_delta == pytest.approx(30.0)
 
-    def test_single_left_only_delta_equals_avg_left(self) -> None:
-        """No right articles → avg_right = 0 → delta = abs(avg_left - 0) = avg_left."""
+    def test_single_left_only_delta_is_zero(self) -> None:
+        """No right articles → no opposing framing → delta is 0.
+
+        spin_delta measures divergence between LEFT and RIGHT framings. With only
+        a left article there is no right side to diverge from; the absent bucket's
+        0.0 average must not leak through as if the right framed the event at 0%.
+        """
         article = make_article("Belfast peace talks stall amid tensions", source="cnn.com")
         result = group_by_event([article], spin_fn=fixed_spin(75.0, "left"))
-        assert result[0].spin_delta == pytest.approx(75.0)
+        assert result[0].right_articles == []
+        assert result[0].spin_delta == pytest.approx(0.0)
 
-    def test_single_right_only_delta_equals_avg_right(self) -> None:
-        """No left articles → avg_left = 0 → delta = abs(0 - avg_right) = avg_right."""
+    def test_single_right_only_delta_is_zero(self) -> None:
+        """No left articles → no opposing framing → delta is 0 (symmetric case)."""
         article = make_article("Senate tax reform package wins crucial approval", source="foxnews.com")
         result = group_by_event([article], spin_fn=fixed_spin(65.0, "right"))
-        assert result[0].spin_delta == pytest.approx(65.0)
+        assert result[0].left_articles == []
+        assert result[0].spin_delta == pytest.approx(0.0)
 
     def test_only_center_articles_delta_is_zero(self) -> None:
         """Center articles contribute to neither left nor right avg → delta = 0."""

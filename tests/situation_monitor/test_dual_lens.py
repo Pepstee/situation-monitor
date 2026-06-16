@@ -124,6 +124,26 @@ class TestCrossLensPairing:
         result = group_by_event([self._left(), self._right()], spin_fn=_map_spin(spin_map))
         assert result[0].spin_delta >= 0.0
 
+    def test_left_only_event_has_zero_spin_delta(self):
+        """A single-lens event has no opposing framing to diverge from, so the
+        divergence must be 0 — the lone side's average must NOT leak through as
+        if the absent right side framed the event at 0%."""
+        result = group_by_event([self._left()], spin_fn=_fixed_spin(80.0, "left"))
+        assert result[0].right_articles == []
+        assert result[0].spin_delta == pytest.approx(0.0)
+
+    def test_right_only_event_has_zero_spin_delta(self):
+        """Symmetric to the left-only case: one right article, no left → delta 0."""
+        result = group_by_event([self._right()], spin_fn=_fixed_spin(75.0, "right"))
+        assert result[0].left_articles == []
+        assert result[0].spin_delta == pytest.approx(0.0)
+
+    def test_center_only_event_has_zero_spin_delta(self):
+        """Centre-only coverage is not opposing framing either → delta 0."""
+        centre = _article("Belfast ceasefire talks reach procedural impasse midweek", "reuters.com")
+        result = group_by_event([centre], spin_fn=_fixed_spin(60.0, "center"))
+        assert result[0].spin_delta == pytest.approx(0.0)
+
 
 # ---------------------------------------------------------------------------
 # spin_fn lens determines bucket, not source_lean attribute
