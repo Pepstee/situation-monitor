@@ -175,6 +175,20 @@ class TestExtractChangeFromTitle:
     def test_large_pct_value_extracted(self) -> None:
         assert _extract_change_from_title("Crash of -30% in a single session") == -30.0
 
+    def test_exponent_fragment_is_not_mistaken_for_a_change(self) -> None:
+        # "1e999%" must not yield a spurious 999.0 — the digits are glued to an
+        # exponent token, not a standalone percentage. A garbage headline → 0.0.
+        assert _extract_change_from_title("Oil 1e999% surge") == 0.0
+
+    def test_result_is_always_finite(self) -> None:
+        import math
+        for title in ("Up 1e500%", "Move 9e308% today", "Word123abc%"):
+            assert math.isfinite(_extract_change_from_title(title))
+
+    def test_decimal_glued_to_word_is_rejected(self) -> None:
+        # A fragment like "v2.5%" inside "rev2.5%" is part of a larger token.
+        assert _extract_change_from_title("rev2.5% milestone") == 0.0
+
 
 # ── Unit: _parse_rss_items ────────────────────────────────────────────────────
 

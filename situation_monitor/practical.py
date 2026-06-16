@@ -74,12 +74,23 @@ def _direction(change: float) -> str:
 
 
 def _extract_change_from_title(title: str) -> float:
-    """Best-effort extraction of a percentage change from a headline string."""
+    """Best-effort extraction of a percentage change from a headline string.
+
+    The number must be a self-contained token: the leading ``(?<![\\w.])``
+    lookbehind rejects fragments lifted out of a larger token, so a malformed
+    headline like ``"Oil 1e999%"`` yields no spurious ``999.0`` (the ``999`` is
+    glued to an ``e``) and degrades to ``0.0`` instead of rendering an absurd
+    market mover. A non-finite parse (``inf``/``nan``) is likewise discarded.
+    """
+    import math
     import re
-    # Look for patterns like +1.2%, -0.5%, 1.20%
-    match = re.search(r'([+-]?\d+\.?\d*)\s*%', title)
+    # Look for a standalone signed decimal immediately followed by '%'
+    # (e.g. +1.2%, -0.5%, 1.20%), not a digit run pulled from inside a token.
+    match = re.search(r'(?<![\w.])([+-]?\d+(?:\.\d+)?)\s*%', title)
     if match:
-        return float(match.group(1))
+        value = float(match.group(1))
+        if math.isfinite(value):
+            return value
     return 0.0
 
 
