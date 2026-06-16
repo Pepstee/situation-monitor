@@ -39,9 +39,13 @@ class RedditScraper:
             score = post.get("score", 0)
             published_at: datetime | None = None
             if created_utc := post.get("created_utc"):
+                # A hostile feed may set created_utc to a non-numeric type
+                # (TypeError on float([...])) or an out-of-range/infinite value
+                # (OverflowError from fromtimestamp(inf)); both must degrade to a
+                # null timestamp, never crash the whole fetch.
                 try:
                     published_at = datetime.fromtimestamp(float(created_utc), tz=timezone.utc)
-                except (ValueError, OSError):
+                except (ValueError, OSError, OverflowError, TypeError):
                     pass
             articles.append(
                 Article(
