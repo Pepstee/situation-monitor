@@ -10,7 +10,7 @@ collapsing to a uniform "none" for every article offline.
 
 from __future__ import annotations
 
-import json
+import re
 from typing import Callable
 
 from situation_monitor.lexicon import score_text
@@ -18,11 +18,9 @@ from situation_monitor.models import Article
 
 _PROMPT_TEMPLATE = """\
 Analyse the following article for propaganda techniques.
-Return a JSON object with a single key "flags" whose value is a list of strings.
-Each string names a propaganda technique present (e.g. "loaded_language",
-"appeal_to_fear", "bandwagon", "false_dichotomy", "scapegoating").
-If none are found, return {{"flags": []}}.
-Respond with valid JSON only.
+List any propaganda techniques found, one per line, choosing from:
+loaded_language, appeal_to_fear, bandwagon, false_dichotomy, scapegoating.
+If none are found, write "none".
 
 Title: {title}
 
@@ -32,13 +30,11 @@ Body excerpt:
 
 _ENRICH_PROMPT_TEMPLATE = """\
 Analyse the following article for propaganda techniques.
-Return a JSON object with:
-  - "flags": a list of strings naming propaganda techniques present
-    (e.g. "loaded_language", "appeal_to_fear", "bandwagon", "false_dichotomy", "scapegoating")
-  - "loaded_language": true if the text uses emotionally charged or manipulative language
-  - "propaganda_flag": true if any propaganda technique is detected
-If none are found return {{"flags": [], "loaded_language": false, "propaganda_flag": false}}.
-Respond with valid JSON only.
+List any propaganda techniques found, one per line, choosing from:
+loaded_language, appeal_to_fear, bandwagon, false_dichotomy, scapegoating.
+Then on separate lines state:
+LOADED_LANGUAGE: yes or no
+PROPAGANDA: yes or no
 
 Title: {title}
 
@@ -48,16 +44,44 @@ Body excerpt:
 
 _EXCERPT_CHARS = 2000
 
+_KNOWN_TECHNIQUES = [
+    "loaded_language",
+    "appeal_to_fear",
+    "bandwagon",
+    "false_dichotomy",
+    "scapegoating",
+]
+
+_TECHNIQUE_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in _KNOWN_TECHNIQUES) + r")\b",
+    re.IGNORECASE,
+)
+_LOADED_RE = re.compile(r"LOADED[_\s]LANGUAGE\s*[:\-]\s*(\w+)", re.IGNORECASE)
+_PROPAGANDA_RE = re.compile(r"PROPAGANDA(?:[_\s]FLAG)?\s*[:\-]\s*(\w+)", re.IGNORECASE)
+_TRUTHY_RE = re.compile(r"^(yes|true|1)$", re.IGNORECASE)
+
+
+def _is_truthy(val: str) -> bool:
+    return bool(_TRUTHY_RE.match(val.strip()))
+
+
+def _parse_flags(raw: str) -> list[str]:
+    seen: set[str] = set()
+    flags: list[str] = []
+    for m in _TECHNIQUE_RE.finditer(raw):
+        t = m.group(1).lower()
+        if t not in seen:
+            seen.add(t)
+            flags.append(t)
+    return flags
+
 
 def flag_article(article: Article, client: Callable[[str], str]) -> list[str]:
     excerpt = (article.body or "")[:_EXCERPT_CHARS]
     prompt = _PROMPT_TEMPLATE.format(title=article.title, excerpt=excerpt)
     try:
         raw = client(prompt)
-        data = json.loads(raw)
-        flags = data.get("flags", [])
-        if isinstance(flags, list) and all(isinstance(f, str) for f in flags):
-            return flags
+        return _parse_flags(raw)
     except Exception:
         pass
     return []
@@ -69,12 +93,14 @@ def enrich_article(article: Article, client: Callable[[str], str]) -> None:
     prompt = _ENRICH_PROMPT_TEMPLATE.format(title=article.title, excerpt=excerpt)
     try:
         raw = client(prompt)
-        data = json.loads(raw)
-        flags = data.get("flags", [])
-        if isinstance(flags, list) and all(isinstance(f, str) for f in flags):
-            article.propaganda_flags = flags
-        article.loaded_language = bool(data.get("loaded_language", False))
-        article.propaganda_flag = bool(data.get("propaganda_flag", False))
+        flags = _parse_flags(raw)
+        article.propaganda_flags = flags
+
+        m = _LOADED_RE.search(raw)
+        article.loaded_language = _is_truthy(m.group(1)) if m else False
+
+        m = _PROPAGANDA_RE.search(raw)
+        article.propaganda_flag = _is_truthy(m.group(1)) if m else bool(flags)
     except Exception:
         pass
 
