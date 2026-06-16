@@ -121,3 +121,13 @@ class TestDefaultPipelineMeasuresSpin:
         )
         events = group_by_event([a])
         assert events[0].center_articles[0].spin.spin_pct == pytest.approx(0.0)
+
+
+def test_score_text_tolerates_none_inputs():
+    """A missing/hostile field (None or non-string) must degrade to a neutral
+    score, not crash the deterministic scorer that backs every offline spin
+    estimate."""
+    for title, body in [(None, ""), ("hi", None), (None, None), (123, ["x"])]:
+        score = score_text(title, body)  # type: ignore[arg-type]
+        assert score.spin_pct == 0.0
+        assert score.fired == {}
