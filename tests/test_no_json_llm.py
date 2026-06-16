@@ -164,10 +164,12 @@ class TestRelevanceJSONBackwardCompat:
         result = score_relevance(_article(), ["ai"], _client('{"score": 0.8}'))
         assert abs(result - 0.8) < 1e-9
 
-    def test_json_with_different_key_parses_value(self) -> None:
-        # '{"relevance": 0.75}' → regex finds "0.75" (the first number present)
+    def test_json_object_without_score_key_falls_back(self) -> None:
+        # A well-formed JSON object with no numeric "score" key has no usable
+        # score, so the parser falls back to the neutral default (1.0) rather
+        # than scraping an unrelated number out of the structured response.
         result = score_relevance(_article(), ["ai"], _client('{"relevance": 0.75}'))
-        assert abs(result - 0.75) < 1e-9
+        assert result == 1.0
 
     def test_json_integer_score(self) -> None:
         result = score_relevance(_article(), ["ai"], _client('{"score": 1}'))
@@ -453,18 +455,17 @@ class TestEnrichArticleBackwardCompatJSON:
         assert "loaded_language" in art.propaganda_flags
         assert "appeal_to_fear" in art.propaganda_flags
 
-    def test_technique_name_as_json_key_is_still_extracted(self) -> None:
-        # The technique regex matches the literal string "loaded_language" wherever it
-        # appears — including as a JSON key name.  A response like
-        # '{"loaded_language": false}' therefore produces flags=["loaded_language"]
-        # and propaganda_flag=True (derived from non-empty flags), even though the
-        # JSON *value* is false.  This is the expected regex-based behaviour.
+    def test_json_booleans_are_honoured_not_scraped_from_keys(self) -> None:
+        # When the response is well-formed JSON it is parsed structurally: the
+        # explicit "propaganda_flag": true is honoured, and "loaded_language":
+        # false is read as a false boolean — NOT scraped as a technique flag out
+        # of the key name. With no flags/techniques list, propaganda_flags stays
+        # empty even though propaganda_flag is True.
         raw = '{"propaganda_flag": true, "loaded_language": false}'
         art = _article()
         enrich_article(art, _client(raw))
-        # "loaded_language" appears in the string → extracted as a technique flag
-        assert "loaded_language" in art.propaganda_flags
-        # propaganda_flag derived from non-empty flags (no PROPAGANDA: line matches)
+        assert art.propaganda_flags == []
+        assert art.loaded_language is False
         assert art.propaganda_flag is True
 
     def test_mixed_json_and_natural_language(self) -> None:

@@ -10,6 +10,7 @@ collapsing to a uniform "none" for every article offline.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Callable
 
@@ -52,6 +53,8 @@ _KNOWN_TECHNIQUES = [
     "scapegoating",
 ]
 
+_KNOWN_SET = frozenset(_KNOWN_TECHNIQUES)
+
 _TECHNIQUE_RE = re.compile(
     r"\b(" + "|".join(re.escape(t) for t in _KNOWN_TECHNIQUES) + r")\b",
     re.IGNORECASE,
@@ -59,13 +62,62 @@ _TECHNIQUE_RE = re.compile(
 _LOADED_RE = re.compile(r"LOADED[_\s]LANGUAGE\s*[:\-]\s*(\w+)", re.IGNORECASE)
 _PROPAGANDA_RE = re.compile(r"PROPAGANDA(?:[_\s]FLAG)?\s*[:\-]\s*(\w+)", re.IGNORECASE)
 _TRUTHY_RE = re.compile(r"^(yes|true|1)$", re.IGNORECASE)
+_FENCE_OPEN_RE = re.compile(r"^```[^\n]*\n?")
+_FENCE_CLOSE_RE = re.compile(r"```\s*$")
+
+# Sentinels distinguishing "response was not JSON" (→ regex fallback) from
+# "JSON object had a malformed flags list" (→ leave existing flags untouched).
+_NOT_JSON = object()
+_INVALID = object()
 
 
 def _is_truthy(val: str) -> bool:
     return bool(_TRUTHY_RE.match(val.strip()))
 
 
-def _parse_flags(raw: str) -> list[str]:
+def _strip_fence(raw: str) -> str:
+    """Remove a surrounding markdown code fence (```json … ```), if present."""
+    s = raw.strip()
+    if s.startswith("```"):
+        s = _FENCE_OPEN_RE.sub("", s)
+        s = _FENCE_CLOSE_RE.sub("", s)
+    return s.strip()
+
+
+def _try_json(raw: str) -> object:
+    """Parse *raw* as JSON, returning ``_NOT_JSON`` when it is free-form prose."""
+    try:
+        return json.loads(_strip_fence(raw))
+    except (ValueError, TypeError):
+        return _NOT_JSON
+
+
+def _flags_from_dict(data: dict) -> object:
+    """Resolve canonical technique flags from a structured JSON object.
+
+    Returns the validated list when a ``flags``/``techniques`` key holds a list
+    of strings, ``_INVALID`` when such a key is present but malformed (so the
+    caller leaves any existing flags untouched), or ``[]`` when no such key
+    exists (a well-formed object that simply names no techniques).
+    """
+    for key in ("flags", "techniques"):
+        if key in data:
+            val = data[key]
+            if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+                return _INVALID
+            seen: set[str] = set()
+            out: list[str] = []
+            for x in val:
+                t = x.lower()
+                if t in _KNOWN_SET and t not in seen:
+                    seen.add(t)
+                    out.append(t)
+            return out
+    return []
+
+
+def _flags_from_text(raw: str) -> list[str]:
+    """Extract canonical technique names from free-form prose via regex."""
     seen: set[str] = set()
     flags: list[str] = []
     for m in _TECHNIQUE_RE.finditer(raw):
@@ -81,10 +133,16 @@ def flag_article(article: Article, client: Callable[[str], str]) -> list[str]:
     prompt = _PROMPT_TEMPLATE.format(title=article.title, excerpt=excerpt)
     try:
         raw = client(prompt)
-        return _parse_flags(raw)
     except Exception:
-        pass
-    return []
+        return []
+
+    data = _try_json(raw)
+    if data is _NOT_JSON:
+        return _flags_from_text(raw)
+    if not isinstance(data, dict):
+        return []  # valid JSON but not an object → no flags
+    flags = _flags_from_dict(data)
+    return [] if flags is _INVALID else flags
 
 
 def enrich_article(article: Article, client: Callable[[str], str]) -> None:
@@ -93,16 +151,33 @@ def enrich_article(article: Article, client: Callable[[str], str]) -> None:
     prompt = _ENRICH_PROMPT_TEMPLATE.format(title=article.title, excerpt=excerpt)
     try:
         raw = client(prompt)
-        flags = _parse_flags(raw)
-        article.propaganda_flags = flags
+    except Exception:
+        return
 
+    data = _try_json(raw)
+
+    if data is _NOT_JSON:
+        # Free-form prose: regex out technique names and explicit flag lines.
+        flags = _flags_from_text(raw)
+        article.propaganda_flags = flags
         m = _LOADED_RE.search(raw)
         article.loaded_language = _is_truthy(m.group(1)) if m else False
-
         m = _PROPAGANDA_RE.search(raw)
         article.propaganda_flag = _is_truthy(m.group(1)) if m else bool(flags)
-    except Exception:
-        pass
+        return
+
+    if not isinstance(data, dict):
+        return  # valid JSON but not an object → leave defaults
+
+    # Structured JSON: honour explicit fields; a malformed flags list is ignored.
+    flags = _flags_from_dict(data)
+    if flags is not _INVALID:
+        article.propaganda_flags = flags
+
+    ll = data.get("loaded_language")
+    article.loaded_language = bool(ll) if isinstance(ll, (bool, int)) else False
+    pf = data.get("propaganda_flag")
+    article.propaganda_flag = bool(pf) if isinstance(pf, (bool, int)) else False
 
 
 # Map curated spin lexicon categories to canonical propaganda technique names.
