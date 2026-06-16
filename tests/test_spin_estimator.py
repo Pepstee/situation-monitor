@@ -3,6 +3,7 @@ receipts content, stub LLM (no network), and AI-domain-specific fields."""
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -366,3 +367,38 @@ class TestMalformedRubricShapes:
         response = '{"spin_pct": 80, "rubric": {"omission": 0.9, "emotional_framing": true}}'
         result = SpinEstimator().estimate_spin(_article(), _stub(response))
         assert result.rubric == {"omission": 0.9}
+
+
+class TestNonFiniteSubscoresRejected:
+    """Python's ``json.loads`` accepts the bare tokens ``NaN``, ``Infinity`` and
+    ``-Infinity`` by default, so a hostile-but-parseable LLM response can smuggle
+    a non-finite float into a rubric subscore or ``hype_vs_substance``. Those must
+    never escape into the data model — they would poison averaging/clamping
+    downstream — so the estimator drops them, mirroring the ``spin_pct`` clamp."""
+
+    def test_nan_subscore_is_dropped_from_rubric(self) -> None:
+        response = '{"spin_pct": 50, "rubric": {"omission": 0.7, "loaded_language": NaN}}'
+        result = SpinEstimator().estimate_spin(_article(), _stub(response))
+        assert result.rubric == {"omission": 0.7}
+        assert all(math.isfinite(v) for v in result.rubric.values())
+
+    def test_infinity_subscore_is_dropped_from_rubric(self) -> None:
+        response = '{"spin_pct": 50, "rubric": {"omission": 0.7, "emotional_framing": Infinity}}'
+        result = SpinEstimator().estimate_spin(_article(), _stub(response))
+        assert result.rubric == {"omission": 0.7}
+        assert all(math.isfinite(v) for v in result.rubric.values())
+
+    def test_nan_hype_falls_back_to_finite_derivation(self) -> None:
+        response = '{"spin_pct": 60, "rubric": {}, "hype_vs_substance": NaN}'
+        result = SpinEstimator().estimate_spin(_article(domain=Domain.AI), _stub(response))
+        assert result.hype_vs_substance is not None
+        assert math.isfinite(result.hype_vs_substance)
+        # Falls back to the spin_pct-derived value (60/100), not NaN.
+        assert result.hype_vs_substance == 0.6
+
+    def test_infinity_hype_falls_back_to_finite_derivation(self) -> None:
+        response = '{"spin_pct": 40, "rubric": {}, "hype_vs_substance": Infinity}'
+        result = SpinEstimator().estimate_spin(_article(domain=Domain.AI), _stub(response))
+        assert result.hype_vs_substance is not None
+        assert math.isfinite(result.hype_vs_substance)
+        assert result.hype_vs_substance == 0.4

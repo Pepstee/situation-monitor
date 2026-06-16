@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Callable
 from urllib.parse import urlparse
@@ -253,10 +254,18 @@ class SpinEstimator:
         # the estimator degrades gracefully instead of crashing on .items().
         if not isinstance(raw_rubric, dict):
             raw_rubric = {}
+        # Python's json.loads accepts the bare tokens NaN, Infinity and
+        # -Infinity by default, so a hostile-but-valid response like
+        # {"rubric": {"loaded_language": NaN}} would otherwise leak a non-finite
+        # float into the rubric subscores (and thence into SpinResult.rubric).
+        # The spin_pct path is already guarded by _clamp_pct; mirror that here by
+        # dropping any non-finite subscore so the rubric never carries NaN/inf.
         rubric_scores: dict[str, float] = {
             k: float(v)
             for k, v in raw_rubric.items()
-            if isinstance(v, (int, float)) and not isinstance(v, bool)
+            if isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and math.isfinite(v)
         }
         # The schema declares spin_pct as a float 0-100. A malformed or hostile
         # LLM response (e.g. 999, -50, NaN) must not escape that range — it would
@@ -277,7 +286,11 @@ class SpinEstimator:
         vendor_pr: bool | None = None
         if is_ai:
             raw_hvs = parsed.get("hype_vs_substance")
-            if isinstance(raw_hvs, (int, float)):
+            if (
+                isinstance(raw_hvs, (int, float))
+                and not isinstance(raw_hvs, bool)
+                and math.isfinite(raw_hvs)
+            ):
                 hype_vs_substance = max(0.0, min(1.0, float(raw_hvs)))
             else:
                 hype_vs_substance = round(spin_pct / 100.0, 4)
