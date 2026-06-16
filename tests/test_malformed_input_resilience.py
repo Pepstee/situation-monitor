@@ -115,6 +115,28 @@ def test_hn_fetcher_survives_json_with_empty_hits_list() -> None:
     assert fetcher.fetch("http://api.example/hn") == []
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [b"[]", b"[1, 2, 3]", b"42", b'"a string"', b"null"],
+    ids=["empty_list", "list", "int", "string", "null"],
+)
+def test_hn_fetcher_survives_non_dict_toplevel_json(payload: bytes) -> None:
+    # A hostile API may return a valid-but-non-dict top-level JSON value;
+    # data.get(...) would raise AttributeError and crash the fetch.
+    fetcher = HNFetcher(client=_StubClient(payload))
+    assert fetcher.fetch("http://api.example/hn") == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"[]", b"[1, 2, 3]", b"42", b'"a string"', b"null"],
+    ids=["empty_list", "list", "int", "string", "null"],
+)
+def test_bluesky_fetcher_survives_non_dict_toplevel_json(payload: bytes) -> None:
+    fetcher = BlueskyFetcher("handle.bsky.social", client=_StubClient(payload))
+    assert fetcher.fetch() == []
+
+
 # ---------------------------------------------------------------------------
 # MastodonFetcher — three crash paths: empty bytes, HTML error page, truncated XML
 # ---------------------------------------------------------------------------
