@@ -123,7 +123,7 @@ class Config:
     poll_interval_seconds: int = 600
     alert_threshold: float = 0.8
     llm_backend: str = "ollama"
-    ollama_model: str = "llama3"
+    ollama_model: str = "qwen3:8b"
     ollama_url: str = "http://localhost:11434"
     polymarket_markets: list = field(default_factory=list)
     polymarket_slugs: list[str] = field(default_factory=list)
