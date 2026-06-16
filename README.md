@@ -366,7 +366,7 @@ Configuration is layered: defaults → JSON file (`--config PATH`) → environme
 | `max_articles_per_digest` | `SM_MAX_ARTICLES` | `20` | Maximum articles per digest cycle |
 | `log_level` | `SM_LOG_LEVEL` | `INFO` | Logging verbosity |
 | `anthropic_model` | `SM_MODEL` | `claude-sonnet-4-6` | Anthropic model for LLM tasks |
-| `llm_backend` | `SM_LLM_BACKEND` | `claude` | `claude` (subprocess) or `ollama` |
+| `llm_backend` | `SM_LLM_BACKEND` | `ollama` | `claude` (subprocess) or `ollama` |
 | `ollama_url` | `SM_OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
 | `ollama_model` | `SM_OLLAMA_MODEL` | `llama3` | Ollama model name |
 | `polymarket_markets` | `SM_POLYMARKET_MARKETS` | `[]` | Path(s) to JSON market definition file(s) |
@@ -384,7 +384,7 @@ Configuration is layered: defaults → JSON file (`--config PATH`) → environme
   "sources": ["https://feeds.bbci.co.uk/news/rss.xml"],
   "poll_interval_seconds": 300,
   "dashboard_port": 8080,
-  "llm_backend": "claude"
+  "llm_backend": "ollama"
 }
 ```
 
