@@ -16,7 +16,10 @@ class CryptoRSSFetcher(Fetcher):
         super().__init__(client)
 
     def fetch(self, url: str = DEFAULT_URL) -> list[Article]:
-        raw = self._client.get(url)
+        try:
+            raw = self._client.get(url)
+        except Exception:
+            return []
         try:
             root = ET.fromstring(raw)
         except ET.ParseError:

@@ -20,7 +20,10 @@ class RedditScraper:
 
     def fetch(self, subreddit: str) -> list[Article]:
         url = f"{_BASE}/{subreddit}.json"
-        raw = self._client.get(url)
+        try:
+            raw = self._client.get(url)
+        except Exception:
+            return []
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError):

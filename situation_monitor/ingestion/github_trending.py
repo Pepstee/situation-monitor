@@ -77,9 +77,15 @@ class GitHubTrendingFetcher(Fetcher):
         super().__init__(client)
 
     def fetch(self, url: str = DEFAULT_URL) -> list[Article]:
-        raw = self._client.get(url).decode("utf-8", errors="replace")
+        try:
+            raw = self._client.get(url).decode("utf-8", errors="replace")
+        except Exception:
+            return []
         parser = _TrendingParser()
-        parser.feed(raw)
+        try:
+            parser.feed(raw)
+        except Exception:
+            return []
         articles: list[Article] = []
         for repo in parser._repos:
             title = re.sub(r"\s+", " ", repo["title"]).strip()
