@@ -19,7 +19,12 @@ class HNFetcher(Fetcher):
         raw = self._client.get(url)
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
+            return []
+        if not isinstance(data, dict):
+            # A hostile API may return a valid-but-non-dict top-level JSON value
+            # (e.g. a list or scalar); data.get(...) would raise AttributeError
+            # and crash the whole fetch. Degrade to no articles instead.
             return []
         articles: list[Article] = []
         for hit in data.get("hits", []):
