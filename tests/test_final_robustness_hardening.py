@@ -364,3 +364,53 @@ class TestEstimateSpinLlmException:
             )
         except Exception as exc:
             pytest.fail(f"estimate_spin propagated an exception: {exc!r}")
+
+
+# ---------------------------------------------------------------------------
+# 5. Non-string LLM responses must degrade gracefully, not crash the parsers.
+#    A backend can return None (or any non-string) on a degenerate reply; the
+#    try/except around the client call does NOT cover the subsequent parse, so
+#    each parser must itself tolerate a non-string response.
+# ---------------------------------------------------------------------------
+
+
+class TestNonStringLLMResponse:
+    """relevance, propaganda, and bias parsers must not raise on non-string input."""
+
+    @staticmethod
+    def _art() -> Article:
+        return Article(
+            url="https://example.com/x",
+            title="Some neutral headline",
+            source="example.com",
+            body="Plain factual body.",
+        )
+
+    @pytest.mark.parametrize("bad", [None, 123, 4.5, ["x"], {"score": 1}, object()])
+    def test_score_relevance_non_string(self, bad: object) -> None:
+        from situation_monitor.relevance import score_relevance
+
+        # Non-string client reply → neutral default 1.0, no exception.
+        score = score_relevance(self._art(), ["topic"], lambda _p: bad)
+        assert score == 1.0
+
+    @pytest.mark.parametrize("bad", [None, 123, 4.5, ["x"], {"flags": []}, object()])
+    def test_flag_article_non_string(self, bad: object) -> None:
+        from situation_monitor.propaganda import flag_article
+
+        assert flag_article(self._art(), lambda _p: bad) == []
+
+    @pytest.mark.parametrize("bad", [None, 123, 4.5, ["x"], {"rubric": {}}, object()])
+    def test_enrich_article_non_string(self, bad: object) -> None:
+        from situation_monitor.propaganda import enrich_article
+
+        art = self._art()
+        enrich_article(art, lambda _p: bad)  # must not raise
+        assert art.propaganda_flags == []
+        assert art.loaded_language is False
+        assert art.propaganda_flag is False
+
+    @pytest.mark.parametrize("bad", [None, 123, 4.5, ["x"], {"rubric": {}}, object()])
+    def test_estimate_spin_non_string(self, bad: object) -> None:
+        result = SpinEstimator().estimate_spin(self._art(), lambda _p: bad)
+        assert isinstance(result, SpinResult)
