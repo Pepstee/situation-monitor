@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from situation_monitor.dual_lens import DualLensEvent
@@ -45,7 +45,7 @@ def daily_digest(
     Accepts prebuilt event and mover lists — no live I/O performed here.
     """
     if as_of is None:
-        as_of = datetime.utcnow()
+        as_of = datetime.now(timezone.utc)
 
     lines: list[str] = [
         f"*Situation Monitor* — {as_of.strftime('%Y-%m-%d %H:%M')} UTC\n",
