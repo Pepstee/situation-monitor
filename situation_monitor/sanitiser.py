@@ -27,6 +27,16 @@ def _clean(text: str) -> str:
 
 def sanitise_article(article: Article) -> Article:
     """Sanitise *article* in-place and return it."""
-    article.title = _clean(article.title or "")[:_MAX_TITLE]
-    article.body = _clean(article.body or "")[:_MAX_BODY]
+    title = _clean(article.title or "")[:_MAX_TITLE]
+    body = _clean(article.body or "")[:_MAX_BODY]
+    # ``_clean`` can reduce an all-markup ("<b></b>") or all-control-char title
+    # to "" — but the domain model forbids an empty title (Article.__post_init__),
+    # and a hostile feed item like "<b></b>" survives the RSS non-empty guard as a
+    # raw string only to collapse here. Preserve the invariant with a best-effort
+    # fallback (body snippet, else a clear marker) rather than emitting a corrupt
+    # record with a blank headline that downstream rendering would happily show.
+    if not title:
+        title = body[:_MAX_TITLE].strip() or "(untitled)"
+    article.title = title
+    article.body = body
     return article
