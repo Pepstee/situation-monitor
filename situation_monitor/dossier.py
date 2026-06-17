@@ -61,10 +61,15 @@ def build_dossier(
 
     deduped = deduplicate(all_articles)
 
-    entity_lower = entity_name.lower()
+    entity_lower = entity_name.strip().lower()
+    # A blank entity must never match (empty substring matches everything,
+    # which would otherwise feed unrelated articles to the summariser and
+    # invite fabrication). No entity → no relevant articles, no summary.
     relevant = [
         a for a in deduped
-        if entity_lower in a.title.lower() or entity_lower in a.body.lower()
+        if entity_lower and (
+            entity_lower in a.title.lower() or entity_lower in a.body.lower()
+        )
     ]
 
     summaries: list[str] = []

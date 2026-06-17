@@ -67,6 +67,33 @@ class _StubHttpClient:
 
 
 # ---------------------------------------------------------------------------
+# Blank-entity guard: an empty/whitespace entity must never match every
+# article (empty substring matches everything) and must never be summarised —
+# that would feed unrelated articles to the LLM and invite fabrication.
+# ---------------------------------------------------------------------------
+
+
+class TestBlankEntityNeverFabricates:
+    def _unrelated_articles(self) -> list[Article]:
+        return [
+            _article("Totally unrelated headline", body="no entity here"),
+            _article("Another off-topic story", body="still nothing relevant"),
+        ]
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t", "\n  \n"])
+    def test_blank_entity_yields_no_summary(self, blank):
+        def _would_fabricate(prompt: str) -> str:
+            return "FABRICATED SUMMARY OF NOTHING"
+
+        with patch("situation_monitor.dossier.RSSFetcher") as mock_cls:
+            mock_cls.return_value.fetch.return_value = self._unrelated_articles()
+            result = build_dossier(blank, _config(), _would_fabricate)
+
+        assert result.summaries == [], "blank entity must not be summarised"
+        assert result.fabrication_flags == []
+
+
+# ---------------------------------------------------------------------------
 # Criterion 1: LLM raises RuntimeError → summaries==[], 'llm_unavailable' in flags
 # ---------------------------------------------------------------------------
 
