@@ -302,3 +302,42 @@ class TestNullValuedMarketFields:
         article = _article(title="Election odds rise")
         markets = [{"question": None, "outcomePrices": ["0.5"]}]
         assert PolymarketClient(["s"]).match(article, markets) is None
+
+
+class TestOutcomePricesJsonStringForm:
+    """The live Gamma API returns ``outcomePrices`` as a JSON-encoded *string*
+    (e.g. ``'["0.52", "0.48"]'``), not a real list. The matcher must decode it,
+    or every real record silently fails to match.
+    """
+
+    def test_json_string_outcome_prices_matches(self) -> None:
+        markets = [
+            {"slug": "bitcoin-up", "question": "Bitcoin up?", "outcomePrices": '["0.61", "0.39"]'}
+        ]
+        result = PolymarketClient(slugs=[]).match(_article(title="Bitcoin moves"), markets)
+        assert result == pytest.approx(0.61)
+
+    def test_list_outcome_prices_still_matches(self) -> None:
+        markets = [{"slug": "bitcoin-up", "question": "Bitcoin up?", "outcomePrices": ["0.61", "0.39"]}]
+        result = PolymarketClient(slugs=[]).match(_article(title="Bitcoin moves"), markets)
+        assert result == pytest.approx(0.61)
+
+    def test_malformed_json_string_returns_none(self) -> None:
+        markets = [{"slug": "bitcoin-up", "question": "Bitcoin up?", "outcomePrices": "[not json"}]
+        assert PolymarketClient(slugs=[]).match(_article(title="Bitcoin moves"), markets) is None
+
+    def test_empty_json_array_string_returns_none(self) -> None:
+        markets = [{"slug": "bitcoin-up", "question": "Bitcoin up?", "outcomePrices": "[]"}]
+        assert PolymarketClient(slugs=[]).match(_article(title="Bitcoin moves"), markets) is None
+
+    def test_helper_handles_string_list_and_garbage(self) -> None:
+        from situation_monitor.polymarket import _first_outcome_price
+
+        assert _first_outcome_price('["0.7", "0.3"]') == pytest.approx(0.7)
+        assert _first_outcome_price(["0.7", "0.3"]) == pytest.approx(0.7)
+        assert _first_outcome_price([0.7, 0.3]) == pytest.approx(0.7)
+        assert _first_outcome_price(None) is None
+        assert _first_outcome_price("") is None
+        assert _first_outcome_price([]) is None
+        assert _first_outcome_price("[bad") is None
+        assert _first_outcome_price(["x"]) is None
