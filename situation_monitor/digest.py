@@ -134,6 +134,26 @@ def breaking_ping(
     _send_telegram(token, chat, "\n".join(lines))
 
 
+def send_daily_digest(
+    events: list[DualLensEvent],
+    movers: list[PracticalMover],
+    token: Optional[str] = None,
+    chat_id: Optional[str] = None,
+) -> None:
+    """Assemble and send the daily digest via Telegram.
+
+    No-op (logs only) when token is absent — safe to call unconditionally.
+    """
+    if not token:
+        _log.info("SM_TELEGRAM_TOKEN not set; skipping digest send")
+        return
+    if not chat_id:
+        _log.warning("telegram_chat_id not set; skipping digest send")
+        return
+    text = daily_digest(events, movers)
+    _send_telegram(token, chat_id, text)
+
+
 def _send_telegram(token: str, chat_id: str, text: str) -> None:
     url = _TELEGRAM_API.format(token=token)
     payload = json.dumps({
