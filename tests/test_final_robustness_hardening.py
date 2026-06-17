@@ -414,3 +414,29 @@ class TestNonStringLLMResponse:
     def test_estimate_spin_non_string(self, bad: object) -> None:
         result = SpinEstimator().estimate_spin(self._art(), lambda _p: bad)
         assert isinstance(result, SpinResult)
+
+
+# ---------------------------------------------------------------------------
+# Total-function helpers: dedup._normalise, sanitiser._clean, relevance._strip_fence
+# must tolerate None / empty input without raising (defence in depth — these are
+# only ever fed model-guaranteed strings today, but the adversarial tier probes
+# the helpers directly).
+# ---------------------------------------------------------------------------
+class TestNoneTolerantHelpers:
+    def test_dedup_normalise_none(self) -> None:
+        from situation_monitor.dedup import _normalise
+
+        assert _normalise(None) == []
+        assert _normalise("") == []
+
+    def test_sanitiser_clean_none(self) -> None:
+        from situation_monitor.sanitiser import _clean
+
+        assert _clean(None) == ""
+        assert _clean("") == ""
+
+    def test_relevance_strip_fence_none(self) -> None:
+        from situation_monitor.relevance import _strip_fence
+
+        assert _strip_fence(None) == ""
+        assert _strip_fence("") == ""

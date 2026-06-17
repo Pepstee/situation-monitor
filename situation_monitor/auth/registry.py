@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-from situation_monitor.auth.models import PlatformDef
 from situation_monitor.auth.platforms import KNOWN_PLATFORMS
 
 

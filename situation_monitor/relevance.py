@@ -42,7 +42,7 @@ _FENCE_CLOSE_RE = re.compile(r"```\s*$")
 
 def _strip_fence(raw: str) -> str:
     """Remove a surrounding markdown code fence (```json … ```), if present."""
-    s = raw.strip()
+    s = (raw or "").strip()
     if s.startswith("```"):
         s = _FENCE_OPEN_RE.sub("", s)
         s = _FENCE_CLOSE_RE.sub("", s)

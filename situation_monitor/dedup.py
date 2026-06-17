@@ -9,7 +9,7 @@ from situation_monitor.models import Article
 
 def _normalise(title: str) -> list[str]:
     """Lowercase, strip punctuation, split into words."""
-    cleaned = re.sub(r"[^\w\s]", "", title.lower())
+    cleaned = re.sub(r"[^\w\s]", "", (title or "").lower())
     return cleaned.split()
 
 
