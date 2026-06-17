@@ -482,3 +482,34 @@ class TestRealisticFeedContent:
         sanitise_article(art)
         assert art.title == title_first
         assert art.body == body_first
+
+
+class TestTitleInvariantPreserved:
+    """A hostile feed item must never sanitise down to a domain-illegal empty title.
+
+    Article.__post_init__ forbids an empty title, but a raw title like ``<b></b>``
+    or one made entirely of control characters survives the RSS non-empty guard
+    (it is non-empty as a raw string) and only collapses inside ``_clean``.
+    sanitise_article must keep the title non-empty with a best-effort fallback.
+    """
+
+    def test_all_markup_title_falls_back_to_body_snippet(self):
+        art = _article("<b></b>", "Crude oil rallies on supply cut.")
+        sanitise_article(art)
+        assert art.title != ""
+        assert "Crude oil rallies" in art.title
+
+    def test_all_control_char_title_with_empty_body_marks_untitled(self):
+        art = _article("\x00\x01\x02", "")
+        sanitise_article(art)
+        assert art.title == "(untitled)"
+
+    def test_all_markup_title_empty_body_marks_untitled(self):
+        art = _article("<span>​</span>", "<i></i>")
+        sanitise_article(art)
+        assert art.title != ""
+
+    def test_fallback_title_respects_max_length(self):
+        art = _article("<b></b>", "x" * (_MAX_TITLE + 500))
+        sanitise_article(art)
+        assert 0 < len(art.title) <= _MAX_TITLE

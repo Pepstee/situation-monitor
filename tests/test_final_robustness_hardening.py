@@ -63,11 +63,14 @@ class TestSanitiserNoneFields:
         art.title = None  # type: ignore[assignment]  -- post-init mutation
         sanitise_article(art)  # must not raise
 
-    def test_none_title_becomes_empty_string(self) -> None:
+    def test_none_title_stays_non_empty(self) -> None:
+        # A None/blank title must NOT survive as an empty string: the domain model
+        # (Article.__post_init__) forbids an empty title, so the sanitiser falls
+        # back to a non-empty marker rather than emitting a corrupt record.
         art = _article()
         art.title = None  # type: ignore[assignment]
         sanitise_article(art)
-        assert art.title == ""
+        assert art.title != ""
 
     def test_both_none_does_not_raise(self) -> None:
         art = _article()
@@ -75,12 +78,13 @@ class TestSanitiserNoneFields:
         art.body = None  # type: ignore[assignment]
         sanitise_article(art)  # must not raise
 
-    def test_both_none_become_empty_strings(self) -> None:
+    def test_both_none_title_non_empty_body_empty(self) -> None:
         art = _article()
         art.title = None  # type: ignore[assignment]
         art.body = None  # type: ignore[assignment]
         sanitise_article(art)
-        assert art.title == ""
+        # Body may legitimately collapse to empty; the title must not (domain rule).
+        assert art.title != ""
         assert art.body == ""
 
     def test_returns_same_object_when_title_none(self) -> None:
