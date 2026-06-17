@@ -8,12 +8,14 @@ Stdout includes near the end (machine-readable gate markers):
   DUAL_LENS: PASS
   SPIN_PCT: <number>%
   MARKET: PASS
+  DOSSIER: PASS
 
 Commands run in sequence:
   1. once           -- full digest (WORLD/MARKETS/AI sections, dual-lens, spin_pct)
   2. digest-dry-run -- Telegram-formatted digest (independent subprocess)
   3. carrier once   -- validates a discourse-carrier line
   4. check_server.py -- Flask smoke test (web-server-smoke: PASS)
+  5. dossier        -- entity dossier smoke check (## DOSSIER header in output)
 """
 from __future__ import annotations
 
@@ -141,11 +143,16 @@ def main() -> None:
     spin_ok = spin_pct is not None
     market_ok = "## MARKETS" in r1
 
-    # Legacy verdict file (expected format by existing tests)
+    # Cmd 5: dossier smoke check (captured; does not pollute stdout)
+    _r_dossier = _run("dossier", "--entity", "TestCo", capture=True)
+    dossier_ok = _r_dossier.returncode == 0 and "## DOSSIER" in _r_dossier.stdout
+
+    # Verdict file
     (_ROOT / "verdict_brief.txt").write_text(
         f"DUAL_LENS: {'Y' if dual_lens_ok else 'N'}\n"
         f"SPIN_PCT: {'Y' if spin_ok else 'N'}\n"
         f"MARKET: {'Y' if market_ok else 'N'}\n"
+        f"DOSSIER: {'Y' if dossier_ok else 'N'}\n"
     )
 
     if not (dual_lens_ok and spin_ok and market_ok):
@@ -190,6 +197,7 @@ def main() -> None:
     print(f"DUAL_LENS: {'PASS' if dual_lens_ok else 'FAIL'}")
     print(f"SPIN_PCT: {spin_pct:.1f}%")
     print(f"MARKET: {'PASS' if market_ok else 'FAIL'}")
+    print(f"DOSSIER: {'PASS' if dossier_ok else 'FAIL'}")
     sys.stdout.flush()
 
 

@@ -49,8 +49,8 @@ _VERDICT_Y = "Y"
 _VERDICT_N = "N"
 
 # Expected verdict_brief.txt content: every value must be Y
-_EXPECTED_VERDICT_KEYS = ("DUAL_LENS", "SPIN_PCT", "MARKET")
-_EXPECTED_VERDICT_LINES = ["DUAL_LENS: Y", "SPIN_PCT: Y", "MARKET: Y"]
+_EXPECTED_VERDICT_KEYS = ("DUAL_LENS", "SPIN_PCT", "MARKET", "DOSSIER")
+_EXPECTED_VERDICT_LINES = ["DUAL_LENS: Y", "SPIN_PCT: Y", "MARKET: Y", "DOSSIER: Y"]
 
 
 # ---------------------------------------------------------------------------
@@ -530,11 +530,11 @@ class TestCriterion4VerdictBriefAllY:
             f"Full file content:\n{content}"
         )
 
-    def test_verdict_brief_has_exactly_three_lines(self) -> None:
-        """verdict_brief.txt must have exactly 3 non-empty lines.
+    def test_verdict_brief_has_exactly_four_lines(self) -> None:
+        """verdict_brief.txt must have exactly 4 non-empty lines.
 
         Fewer lines means acceptance.py did not finish writing all verdicts.
-        Extra lines means the file format changed — downstream parsers expect 3.
+        Extra lines means the file format changed — downstream parsers expect 4.
         """
         if not VERDICT_BRIEF.exists():
             pytest.skip("verdict_brief.txt absent")
@@ -543,8 +543,8 @@ class TestCriterion4VerdictBriefAllY:
             for ln in VERDICT_BRIEF.read_text(errors="replace").splitlines()
             if ln.strip()
         ]
-        assert len(lines) == 3, (
-            f"verdict_brief.txt has {len(lines)} non-empty lines; expected exactly 3.\n"
+        assert len(lines) == 4, (
+            f"verdict_brief.txt has {len(lines)} non-empty lines; expected exactly 4.\n"
             f"Lines: {lines!r}\n"
             f"Expected: {_EXPECTED_VERDICT_LINES!r}"
         )
