@@ -177,6 +177,48 @@ class TestCleanWhitespaceNormalisation:
 
 
 # ---------------------------------------------------------------------------
+# _clean: control-character stripping
+# ---------------------------------------------------------------------------
+
+
+class TestCleanControlCharacters:
+    """C0/C1 control characters (NUL, BEL, etc.) are not whitespace, so a plain
+    ``\\s+`` pass leaves them intact. They can corrupt downstream HTML/Telegram
+    rendering, so the cleaner strips them outright."""
+
+    def test_nul_byte_removed(self):
+        assert "\x00" not in _clean("head\x00line")
+        assert _clean("head\x00line") == "headline"
+
+    def test_bell_char_removed(self):
+        assert _clean("ring\x07bell") == "ringbell"
+
+    def test_control_only_string_becomes_empty(self):
+        assert _clean("\x00\x07\x1f") == ""
+
+    def test_del_and_c1_controls_removed(self):
+        # \x7f (DEL) and \x9f (a C1 control) must not survive.
+        result = _clean("a\x7fb\x9fc")
+        assert result == "abc"
+
+    def test_standard_whitespace_controls_still_collapse_to_space(self):
+        # \t \n \r \f \v are excluded from the control-strip set so they keep
+        # acting as word separators that collapse to a single space.
+        assert _clean("one\ttwo\nthree\rfour") == "one two three four"
+
+    def test_sanitise_article_strips_control_chars_from_title(self):
+        art = _article("Break\x00ing \x07News")
+        sanitise_article(art)
+        assert "\x00" not in art.title
+        assert "\x07" not in art.title
+        assert art.title == "Breaking News"
+
+    def test_printable_unicode_preserved(self):
+        # Only control characters are stripped; ordinary accented/CJK letters stay.
+        assert _clean("café \x00日本") == "café 日本"
+
+
+# ---------------------------------------------------------------------------
 # sanitise_article: field extraction and identity
 # ---------------------------------------------------------------------------
 
