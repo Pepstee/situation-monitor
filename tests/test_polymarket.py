@@ -279,3 +279,26 @@ class TestPolymarketClientMatch:
         article = _article(title="test market news today")
         result = client.match(article, markets)
         assert result == pytest.approx(0.73)
+
+
+class TestNullValuedMarketFields:
+    """Real Polymarket API responses can carry JSON nulls (slug/question/keywords).
+
+    A present-but-null key slips past `.get(k, default)` — `.get` only returns the
+    default when the key is *absent* — so these records must be coerced, not assumed
+    string/list. Regression guard: a null field degrades to "no match", never raises.
+    """
+
+    def test_matcher_null_keywords_returns_none(self) -> None:
+        article = _article(title="Election odds rise")
+        assert PolymarketMatcher().match(article, [{"keywords": None, "odds": 0.5}]) is None
+
+    def test_client_null_slug_returns_none(self) -> None:
+        article = _article(title="Election odds rise")
+        markets = [{"slug": None, "outcomePrices": ["0.5"]}]
+        assert PolymarketClient(["s"]).match(article, markets) is None
+
+    def test_client_null_question_returns_none(self) -> None:
+        article = _article(title="Election odds rise")
+        markets = [{"question": None, "outcomePrices": ["0.5"]}]
+        assert PolymarketClient(["s"]).match(article, markets) is None

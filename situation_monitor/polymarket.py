@@ -15,7 +15,10 @@ class PolymarketMatcher:
         # with "can only concatenate str (not NoneType) to str".
         text = (article.title + " " + (article.body or "")).lower()
         for market in markets:
-            keywords: list[str] = market.get("keywords", [])
+            # A malformed market record may carry "keywords": null; coerce to an
+            # empty list so iteration degrades to "no match" instead of raising
+            # "NoneType is not iterable".
+            keywords: list[str] = market.get("keywords") or []
             if any(kw.lower() in text for kw in keywords):
                 # A malformed market record may omit "odds" or carry a
                 # non-numeric value; skip it rather than raising.
@@ -68,11 +71,14 @@ class PolymarketClient:
         """
         text = (article.title + " " + (article.body or "")).lower()
         for market in markets:
-            slug: str = market.get("slug", "")
+            # The API may return "slug": null or "question": null; `.get(k, "")`
+            # still yields None for a present-but-null key, so `or ""` is needed
+            # to avoid "NoneType has no attribute 'split'".
+            slug: str = market.get("slug") or ""
             slug_keywords = [w for w in slug.split("-") if len(w) > 2]
             question_words = [
                 w.lower()
-                for w in market.get("question", "").split()
+                for w in (market.get("question") or "").split()
                 if len(w) > 3
             ]
             if any(kw in text for kw in slug_keywords) or any(
