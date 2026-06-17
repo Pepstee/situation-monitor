@@ -242,7 +242,10 @@ class SpinEstimator:
             '}'
         )
 
-        raw = llm_client(prompt)
+        try:
+            raw = llm_client(prompt)
+        except Exception:
+            return self._fallback(article, is_ai)
         parsed = _try_parse(raw)
 
         if parsed is None:
