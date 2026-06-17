@@ -318,9 +318,9 @@ def _format_article(art: Article, heading: str = "##") -> None:
 
 def _print_markdown(articles: list[Article]) -> None:
     from collections import defaultdict
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    print(f"# Situation Monitor Digest — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n")
+    print(f"# Situation Monitor Digest — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC\n")
     if not articles:
         print("_No stories found._")
         return
