@@ -7,8 +7,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from situation_monitor.reliability import ReliabilityTracker
 
 
@@ -244,6 +242,114 @@ class TestLoadSave:
             assert "v1" not in tracker3._data
         finally:
             os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Corrupt persisted state — structural malformation must degrade, never crash
+# ---------------------------------------------------------------------------
+
+class TestCorruptPersistedState:
+    """A hand-edited or partially-written state/reliability.json must not
+    crash the run: load() rejects malformed structure and get_tracked_
+    reliability() never raises on a surviving bad entry."""
+
+    def _write(self, payload) -> str:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            json.dump(payload, f)
+            return f.name
+
+    def test_top_level_json_array_does_not_raise(self):
+        path = self._write([1, 2, 3])
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)  # previously AttributeError: list has no .items()
+            assert tracker._data == {}
+        finally:
+            os.unlink(path)
+
+    def test_top_level_json_scalar_does_not_raise(self):
+        path = self._write("just a string")
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker._data == {}
+        finally:
+            os.unlink(path)
+
+    def test_string_value_does_not_corrupt_into_char_list(self):
+        # list("malformed") would unpack-crash get_tracked_reliability later.
+        path = self._write({"src": "malformed"})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert "src" not in tracker._data
+            assert tracker.get_tracked_reliability("src") is None
+        finally:
+            os.unlink(path)
+
+    def test_wrong_length_pair_is_rejected(self):
+        path = self._write({"src": [1, 2, 3]})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker.get_tracked_reliability("src") is None
+        finally:
+            os.unlink(path)
+
+    def test_null_value_is_rejected(self):
+        path = self._write({"src": None})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker.get_tracked_reliability("src") is None
+        finally:
+            os.unlink(path)
+
+    def test_non_numeric_pair_elements_are_rejected(self):
+        path = self._write({"src": ["a", "b"]})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker.get_tracked_reliability("src") is None
+        finally:
+            os.unlink(path)
+
+    def test_boolean_pair_elements_are_rejected(self):
+        # bools are int subclasses; a [True, False] entry is not real data.
+        path = self._write({"src": [True, False]})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker.get_tracked_reliability("src") is None
+        finally:
+            os.unlink(path)
+
+    def test_valid_entries_survive_alongside_corrupt_ones(self):
+        path = self._write({"good": [2, 20], "bad": "x", "also_bad": [1, 2, 3]})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker.get_tracked_reliability("good") == "high"
+            assert tracker.get_tracked_reliability("bad") is None
+            assert tracker.get_tracked_reliability("also_bad") is None
+        finally:
+            os.unlink(path)
+
+    def test_float_pair_is_coerced_to_int(self):
+        path = self._write({"src": [1.0, 3.0]})
+        try:
+            tracker = ReliabilityTracker()
+            tracker.load(path)
+            assert tracker._data["src"] == [1, 3]
+            assert tracker.get_tracked_reliability("src") == "medium"
+        finally:
+            os.unlink(path)
+
+    def test_non_string_keys_skipped_without_crash(self):
+        # JSON forces string keys, but guard against an injected dict directly.
+        tracker = ReliabilityTracker()
+        tracker._data = {1: "not a list"}  # type: ignore[dict-item]
+        assert tracker.get_tracked_reliability("1") is None
 
 
 # ---------------------------------------------------------------------------

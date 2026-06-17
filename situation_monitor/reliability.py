@@ -21,9 +21,12 @@ class ReliabilityTracker:
         self._data[source][1] += count
 
     def get_tracked_reliability(self, source: str) -> Optional[str]:
-        if source not in self._data:
+        entry = self._data.get(source)
+        if not isinstance(entry, list) or len(entry) != 2:
             return None
-        fetches, total = self._data[source]
+        fetches, total = entry
+        if not isinstance(fetches, (int, float)) or not isinstance(total, (int, float)):
+            return None
         if fetches == 0:
             return None
         avg = total / fetches
@@ -33,12 +36,34 @@ class ReliabilityTracker:
             return "medium"
         return "low"
 
+    @staticmethod
+    def _coerce_pair(value: object) -> Optional[list[int]]:
+        """Accept only a clean [fetch_count, total_articles] integer pair."""
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        fetches, total = value
+        # Reject bools and non-numerics; coerce clean numerics to int.
+        if isinstance(fetches, bool) or isinstance(total, bool):
+            return None
+        if not isinstance(fetches, (int, float)) or not isinstance(total, (int, float)):
+            return None
+        return [int(fetches), int(total)]
+
     def load(self, path: str) -> None:
         try:
             raw = json.loads(Path(path).read_text())
-            self._data = {k: list(v) for k, v in raw.items()}
-        except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError):
-            pass
+        except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+            return
+        if not isinstance(raw, dict):
+            return
+        cleaned: dict[str, list[int]] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                continue
+            pair = self._coerce_pair(value)
+            if pair is not None:
+                cleaned[key] = pair
+        self._data = cleaned
 
     def save(self, path: str) -> None:
         p = Path(path)
