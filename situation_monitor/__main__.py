@@ -55,9 +55,15 @@ def _apply_env(config: Config) -> None:
     if v := os.environ.get("SM_SOURCES"):
         config.sources = [s.strip() for s in v.split(",") if s.strip()]
     if v := os.environ.get("SM_POLL_INTERVAL"):
-        config.poll_interval_seconds = int(v)
+        try:
+            config.poll_interval_seconds = int(v)
+        except (ValueError, TypeError):
+            pass
     if v := os.environ.get("SM_DASHBOARD_PORT"):
-        config.dashboard_port = int(v)
+        try:
+            config.dashboard_port = int(v)
+        except (ValueError, TypeError):
+            pass
     if v := os.environ.get("SM_LLM_BACKEND"):
         config.llm_backend = v
     if v := os.environ.get("SM_OLLAMA_URL"):
@@ -65,9 +71,15 @@ def _apply_env(config: Config) -> None:
     if v := os.environ.get("SM_OLLAMA_MODEL"):
         config.ollama_model = v
     if v := os.environ.get("SM_MAX_ARTICLES"):
-        config.max_articles_per_digest = int(v)
+        try:
+            config.max_articles_per_digest = int(v)
+        except (ValueError, TypeError):
+            pass
     if v := os.environ.get("SM_FETCH_INTERVAL"):
-        config.fetch_interval_seconds = int(v)
+        try:
+            config.fetch_interval_seconds = int(v)
+        except (ValueError, TypeError):
+            pass
     if v := os.environ.get("SM_LOG_LEVEL"):
         config.log_level = v
     if v := os.environ.get("SM_POLYMARKET_MARKETS"):

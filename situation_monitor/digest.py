@@ -105,7 +105,10 @@ def breaking_ping(
       TELEGRAM_CHAT_ID
     """
     if threshold is None:
-        threshold = float(os.environ.get("BREAKING_THRESHOLD", "0.85"))
+        try:
+            threshold = float(os.environ.get("BREAKING_THRESHOLD", "0.85"))
+        except (ValueError, TypeError):
+            threshold = 0.85
 
     token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:

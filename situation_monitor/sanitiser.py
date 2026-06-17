@@ -22,6 +22,6 @@ def _clean(text: str) -> str:
 
 def sanitise_article(article: Article) -> Article:
     """Sanitise *article* in-place and return it."""
-    article.title = _clean(article.title)[:_MAX_TITLE]
-    article.body = _clean(article.body)[:_MAX_BODY]
+    article.title = _clean(article.title or "")[:_MAX_TITLE]
+    article.body = _clean(article.body or "")[:_MAX_BODY]
     return article
