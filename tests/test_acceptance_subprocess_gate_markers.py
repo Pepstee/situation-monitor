@@ -42,7 +42,7 @@ ACCEPTANCE_PY = PROJECT_ROOT / "acceptance.py"
 VERDICT_BRIEF = PROJECT_ROOT / "verdict_brief.txt"
 TESTS_DIR = PROJECT_ROOT / "tests"
 
-_EXPECTED_VERDICT_LINES = ["DUAL_LENS: Y", "SPIN_PCT: Y", "MARKET: Y"]
+_EXPECTED_VERDICT_LINES = ["DUAL_LENS: Y", "SPIN_PCT: Y", "MARKET: Y", "DOSSIER: Y"]
 
 
 # ---------------------------------------------------------------------------
@@ -424,31 +424,33 @@ class TestGateMarkerOrdering:
             f"SPIN_PCT at {spin_pos}, MARKET: PASS at {market_pos}."
         )
 
-    def test_three_gate_markers_are_final_non_empty_lines(self, stdout: str) -> None:
-        """The three gate markers (DUAL_LENS/SPIN_PCT/MARKET) must be the last 3 non-empty lines.
+    def test_four_gate_markers_are_final_non_empty_lines(self, stdout: str) -> None:
+        """The four gate markers (DUAL_LENS/SPIN_PCT/MARKET/DOSSIER) must be the last 4 non-empty lines.
 
         acceptance.py ends with:
             print(f'DUAL_LENS: ...')
             print(f'SPIN_PCT: ...')
             print(f'MARKET: ...')
+            print(f'DOSSIER: ...')
         with nothing after them — they are the terminal output.
         """
         non_empty = [ln for ln in stdout.splitlines() if ln.strip()]
-        assert len(non_empty) >= 3, (
-            f"stdout has only {len(non_empty)} non-empty lines — expected ≥3."
+        assert len(non_empty) >= 4, (
+            f"stdout has only {len(non_empty)} non-empty lines — expected ≥4."
         )
-        tail = non_empty[-3:]
+        tail = non_empty[-4:]
         patterns = [
             re.compile(r"^DUAL_LENS: PASS$"),
             re.compile(r"^SPIN_PCT: [\d.]+%$"),
             re.compile(r"^MARKET: PASS$"),
+            re.compile(r"^DOSSIER: PASS$"),
         ]
         for i, (line, pat) in enumerate(zip(tail, patterns)):
             assert pat.match(line), (
-                f"Last 3 non-empty stdout lines must be the gate markers.\n"
+                f"Last 4 non-empty stdout lines must be the gate markers.\n"
                 f"Line {i + 1} (0-indexed from end): {line!r}\n"
                 f"Expected pattern: {pat.pattern!r}\n"
-                f"Actual last 3 lines: {tail!r}"
+                f"Actual last 4 lines: {tail!r}"
             )
 
     def test_no_fail_variant_of_any_gate_marker(self, stdout: str) -> None:
@@ -522,10 +524,10 @@ class TestVerdictBriefAfterRun:
             f"Lines with N: {n_lines!r}\nFull content:\n{content!r}"
         )
 
-    def test_verdict_brief_exact_three_lines(
+    def test_verdict_brief_exact_four_lines(
         self, acceptance_run: subprocess.CompletedProcess
     ) -> None:
-        """Stripped non-empty lines must match exactly ['DUAL_LENS: Y', 'SPIN_PCT: Y', 'MARKET: Y']."""
+        """Stripped non-empty lines must match exactly the four expected verdict lines."""
         _ = acceptance_run
         content = VERDICT_BRIEF.read_text(errors="replace")
         lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
@@ -699,6 +701,10 @@ class TestAllCriteriaSimultaneously:
         # Criterion 2c: MARKET: PASS
         if not re.search(r"^MARKET: PASS$", stdout, re.MULTILINE):
             failures.append("Criterion 2c: No '^MARKET: PASS$' line in stdout.")
+
+        # Criterion 2f: DOSSIER: PASS
+        if not re.search(r"^DOSSIER: PASS$", stdout, re.MULTILINE):
+            failures.append("Criterion 2f: No '^DOSSIER: PASS$' line in stdout.")
 
         # Criterion 2d: web-server-smoke: PASS
         if "web-server-smoke: PASS" not in stdout:

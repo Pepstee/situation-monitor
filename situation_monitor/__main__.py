@@ -1,9 +1,10 @@
 """CLI entry point for situation_monitor.
 
 Subcommands:
-  once   – ingest, enrich, print Markdown digest, exit
-  serve  – start the web dashboard
-  run    – loop 'once' every poll_interval_seconds
+  once    – ingest, enrich, print Markdown digest, exit
+  serve   – start the web dashboard
+  run     – loop 'once' every poll_interval_seconds
+  dossier – build a per-entity intelligence dossier
 """
 
 from __future__ import annotations
@@ -425,6 +426,34 @@ def _cmd_run(config: Config) -> None:
         time.sleep(config.poll_interval_seconds)
 
 
+def _cmd_dossier(entity: str, config: Config) -> None:
+    from situation_monitor.dossier import build_dossier
+
+    llm = get_llm_client(config)
+
+    # In offline/stub mode, skip real network fetches — all sources will raise,
+    # which build_dossier handles gracefully by recording them as outages.
+    _client = None
+    if config.llm_backend in ("offline", "stub"):
+        class _OfflineClient:
+            def get(self, url: str) -> bytes:
+                raise OSError("offline mode: skipping dossier network fetch")
+        _client = _OfflineClient()
+
+    dossier = build_dossier(entity, config, llm, _client=_client)
+    print(f"## DOSSIER — {entity}")
+    print(f"Sources checked: {dossier.sources_checked}")
+    print(f"Articles found: {dossier.articles_found}")
+    if dossier.summaries:
+        print("\n### Summary")
+        for s in dossier.summaries:
+            print(s)
+    if dossier.outage_sources:
+        print(f"Source outages: {len(dossier.outage_sources)}")
+    if dossier.fabrication_flags:
+        print(f"Flags: {', '.join(dossier.fabrication_flags)}")
+
+
 def _cmd_digest_dry_run(config: Config) -> None:
     """Assemble a Telegram digest from a fresh ingest and print it — never sends."""
     from situation_monitor.digest import daily_digest
@@ -476,6 +505,17 @@ def main(argv: list[str] | None = None) -> None:
         parents=[shared],
         help="Assemble a Telegram digest from recent events and print it — never sends",
     )
+    p_dossier = sub.add_parser(
+        "dossier",
+        parents=[shared],
+        help="Build a per-entity intelligence dossier from multi-source news",
+    )
+    p_dossier.add_argument(
+        "--entity",
+        required=True,
+        metavar="NAME",
+        help="Entity name to research (company, person, or topic)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -494,6 +534,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_run(config)
     elif args.cmd == "digest-dry-run":
         _cmd_digest_dry_run(config)
+    elif args.cmd == "dossier":
+        _cmd_dossier(args.entity, config)
 
 
 if __name__ == "__main__":

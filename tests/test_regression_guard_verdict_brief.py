@@ -39,7 +39,7 @@ VERDICT_BRIEF = PROJECT_ROOT / "verdict_brief.txt"
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 
 # The exact expected value of verdict_brief.txt lines stripped (criterion 3).
-EXPECTED_VERDICT_LINES: list[str] = ["DUAL_LENS: Y", "SPIN_PCT: Y", "MARKET: Y"]
+EXPECTED_VERDICT_LINES: list[str] = ["DUAL_LENS: Y", "SPIN_PCT: Y", "MARKET: Y", "DOSSIER: Y"]
 
 # The markers that acceptance.py checks to produce each verdict flag.
 _MARKER_FOR_DUAL_LENS = "DUAL-LENS EVENTS"
@@ -410,12 +410,12 @@ class TestVerdictBriefCommittedSnapshot:
         content = VERDICT_BRIEF.read_text(errors="replace")
         assert content.strip(), "verdict_brief.txt must not be empty or whitespace-only."
 
-    def test_verdict_brief_has_exactly_three_non_empty_lines(self) -> None:
-        """The criterion specifies exactly 3 elements in the stripped-lines list."""
+    def test_verdict_brief_has_exactly_four_non_empty_lines(self) -> None:
+        """The criterion specifies exactly 4 elements in the stripped-lines list."""
         content = VERDICT_BRIEF.read_text(errors="replace")
         non_empty = [ln.strip() for ln in content.splitlines() if ln.strip()]
-        assert len(non_empty) == 3, (
-            f"verdict_brief.txt must have exactly 3 non-empty lines; got {len(non_empty)}.\n"
+        assert len(non_empty) == 4, (
+            f"verdict_brief.txt must have exactly 4 non-empty lines; got {len(non_empty)}.\n"
             f"Lines: {non_empty!r}\n"
             f"Expected: {EXPECTED_VERDICT_LINES!r}"
         )
@@ -480,13 +480,13 @@ class TestVerdictBriefCommittedSnapshot:
         )
 
     def test_verdict_brief_key_names_are_correct_identifiers(self) -> None:
-        """Keys must be exactly DUAL_LENS, SPIN_PCT, MARKET — no aliases or typos."""
+        """Keys must be exactly DUAL_LENS, SPIN_PCT, MARKET, DOSSIER — no aliases or typos."""
         content = VERDICT_BRIEF.read_text(errors="replace")
         lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
         keys = [ln.partition(":")[0].strip() for ln in lines if ":" in ln]
-        assert keys == ["DUAL_LENS", "SPIN_PCT", "MARKET"], (
+        assert keys == ["DUAL_LENS", "SPIN_PCT", "MARKET", "DOSSIER"], (
             f"verdict_brief.txt key names are wrong.\n"
-            f"Expected: ['DUAL_LENS', 'SPIN_PCT', 'MARKET']\n"
+            f"Expected: ['DUAL_LENS', 'SPIN_PCT', 'MARKET', 'DOSSIER']\n"
             f"Got:      {keys!r}"
         )
 
@@ -517,26 +517,26 @@ class TestVerdictBriefCommittedSnapshot:
                 "Expected: uppercase key, colon, one space, 'Y' or 'N' (e.g. 'DUAL_LENS: Y')"
             )
 
-    def test_verdict_brief_key_order_is_dual_lens_spin_pct_market(self) -> None:
-        """Lines must appear in the write order: DUAL_LENS, SPIN_PCT, MARKET.
+    def test_verdict_brief_key_order_is_dual_lens_spin_pct_market_dossier(self) -> None:
+        """Lines must appear in the write order: DUAL_LENS, SPIN_PCT, MARKET, DOSSIER.
 
         acceptance.py writes the keys in this order — the file must preserve it.
         """
         content = VERDICT_BRIEF.read_text(errors="replace")
         lines = [ln.strip() for ln in content.splitlines() if ln.strip() and ":" in ln]
         keys = [ln.partition(":")[0].strip() for ln in lines]
-        assert keys == ["DUAL_LENS", "SPIN_PCT", "MARKET"], (
-            f"verdict_brief.txt key order must be DUAL_LENS → SPIN_PCT → MARKET.\n"
+        assert keys == ["DUAL_LENS", "SPIN_PCT", "MARKET", "DOSSIER"], (
+            f"verdict_brief.txt key order must be DUAL_LENS → SPIN_PCT → MARKET → DOSSIER.\n"
             f"Got: {keys!r}"
         )
 
     def test_verdict_brief_has_no_extra_lines(self) -> None:
-        """verdict_brief.txt must contain EXACTLY 3 non-empty lines — no extras."""
+        """verdict_brief.txt must contain EXACTLY 4 non-empty lines — no extras."""
         content = VERDICT_BRIEF.read_text(errors="replace")
         non_empty = [ln for ln in content.splitlines() if ln.strip()]
-        assert len(non_empty) == 3, (
-            f"verdict_brief.txt has {len(non_empty)} non-empty lines; expected exactly 3.\n"
-            f"Extra content: {non_empty[3:]!r}"
+        assert len(non_empty) == 4, (
+            f"verdict_brief.txt has {len(non_empty)} non-empty lines; expected exactly 4.\n"
+            f"Extra content: {non_empty[4:]!r}"
         )
 
 
@@ -811,8 +811,8 @@ class TestAllThreeCriteriaSimultaneously:
             f"Actual:   {actual!r}"
         )
 
-    def test_all_three_verdict_lines_are_y(self) -> None:
-        """All three verdict flags must be Y — no N values anywhere in the file."""
+    def test_all_four_verdict_lines_are_y(self) -> None:
+        """All four verdict flags must be Y — no N values anywhere in the file."""
         content = VERDICT_BRIEF.read_text(errors="replace")
         for expected in EXPECTED_VERDICT_LINES:
             assert expected in content, (
@@ -823,7 +823,7 @@ class TestAllThreeCriteriaSimultaneously:
     def test_no_y_is_false_positive_given_stdout_markers(
         self, acceptance_stdout: str
     ) -> None:
-        """All three 'Y' verdicts must be backed by the corresponding markers in stdout.
+        """All four 'Y' verdicts must be backed by the corresponding markers in stdout.
 
         A 'Y' verdict without its marker in stdout is a false positive — the logic
         is wrong or the file is stale.
@@ -845,6 +845,12 @@ class TestAllThreeCriteriaSimultaneously:
         if "MARKET: Y" in content:
             assert _MARKER_FOR_MARKET in acceptance_stdout, (
                 "MARKET: Y in verdict_brief.txt but stdout lacked '## MARKETS'.\n"
+                "This is a false positive — the verdict logic or the file is stale."
+            )
+
+        if "DOSSIER: Y" in content:
+            assert "DOSSIER: PASS" in acceptance_stdout, (
+                "DOSSIER: Y in verdict_brief.txt but stdout lacked 'DOSSIER: PASS'.\n"
                 "This is a false positive — the verdict logic or the file is stale."
             )
 
