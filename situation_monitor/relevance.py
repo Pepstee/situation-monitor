@@ -53,7 +53,12 @@ def _extract_score(raw: str) -> float | None:
     """Return a numeric score from *raw*, or None when none is present.
 
     Prefers structured JSON; falls back to the first number in free-form prose.
+    A non-string response (e.g. a backend returning ``None`` on a degenerate
+    reply) yields no score so the caller falls back to the neutral default,
+    rather than raising.
     """
+    if not isinstance(raw, str):
+        return None
     text = _strip_fence(raw)
     try:
         data = json.loads(text)

@@ -181,7 +181,13 @@ def _clamp_pct(value: float) -> float:
 
 
 def _try_parse(raw: str) -> dict | None:
-    """Extract the first JSON object from an LLM response string."""
+    """Extract the first JSON object from an LLM response string.
+
+    A non-string response (e.g. a backend returning ``None``) is unparseable,
+    so the caller falls back to the deterministic estimate rather than raising.
+    """
+    if not isinstance(raw, str):
+        return None
     raw = raw.strip()
     start = raw.find("{")
     end = raw.rfind("}")

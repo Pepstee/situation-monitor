@@ -135,6 +135,10 @@ def flag_article(article: Article, client: Callable[[str], str]) -> list[str]:
         raw = client(prompt)
     except Exception:
         return []
+    if not isinstance(raw, str):
+        # A backend returning a non-string (e.g. None on a degenerate reply)
+        # names no techniques rather than crashing the parser.
+        raw = ""
 
     data = _try_json(raw)
     if data is _NOT_JSON:
@@ -153,6 +157,8 @@ def enrich_article(article: Article, client: Callable[[str], str]) -> None:
         raw = client(prompt)
     except Exception:
         return
+    if not isinstance(raw, str):
+        raw = ""  # non-string reply → leave article defaults untouched
 
     data = _try_json(raw)
 
