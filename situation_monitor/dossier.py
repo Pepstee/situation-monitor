@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from situation_monitor.config import DEFAULT_SOURCE_DEFS, Config, SourceDef
-from situation_monitor.models import Domain
+from situation_monitor.dedup import deduplicate
+from situation_monitor.ingestion.base import HttpClient
+from situation_monitor.ingestion.rss import RSSFetcher
+from situation_monitor.models import Article, Domain
 
 
 @dataclass
@@ -37,5 +41,59 @@ ENTITY_ROSTER: list[SourceDef] = [
 ]
 
 
-def build_dossier(entity_name: str, config: Config, llm) -> EntityDossier:
-    raise NotImplementedError
+def build_dossier(
+    entity_name: str,
+    config: Config,
+    llm: Callable[[str], str],
+    *,
+    _client: HttpClient | None = None,
+) -> EntityDossier:
+    fetcher = RSSFetcher(client=_client)
+    all_articles: list[Article] = []
+    outage_sources: list[str] = []
+
+    for source_def in ENTITY_ROSTER:
+        try:
+            articles = fetcher.fetch(source_def.url, source_def)
+            all_articles.extend(articles)
+        except Exception:
+            outage_sources.append(source_def.name)
+
+    deduped = deduplicate(all_articles)
+
+    entity_lower = entity_name.lower()
+    relevant = [
+        a for a in deduped
+        if entity_lower in a.title.lower() or entity_lower in a.body.lower()
+    ]
+
+    summaries: list[str] = []
+    fabrication_flags: list[str] = []
+
+    if relevant:
+        snippets = "\n".join(
+            f"- [{a.source}] {a.title}: {a.body[:200]}" for a in relevant[:20]
+        )
+        prompt = (
+            f"You are a factual intelligence analyst. Do not fabricate any information.\n"
+            f"Summarise what is known about '{entity_name}' based solely on the following "
+            f"news excerpts. If there is insufficient information, say so explicitly.\n\n"
+            f"{snippets}"
+        )
+        try:
+            response = llm(prompt)
+            if response and response.strip():
+                summaries = [response.strip()]
+            else:
+                fabrication_flags.append("llm_unavailable")
+        except Exception:
+            fabrication_flags.append("llm_unavailable")
+
+    return EntityDossier(
+        entity=entity_name,
+        sources_checked=len(ENTITY_ROSTER),
+        articles_found=len(deduped),
+        summaries=summaries,
+        fabrication_flags=fabrication_flags,
+        outage_sources=outage_sources,
+    )
