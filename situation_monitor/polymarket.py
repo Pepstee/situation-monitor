@@ -2,9 +2,32 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from situation_monitor.models import Article
+
+
+def _first_outcome_price(raw: object) -> float | None:
+    """Return the Yes-outcome price from a Polymarket ``outcomePrices`` value.
+
+    The live Gamma API returns this field as a JSON-encoded string
+    (e.g. ``'["0.52", "0.48"]'``) rather than a real list, so a naive
+    ``float(prices[0])`` would parse the literal ``'['`` and silently fail on
+    every real record. Accept both the encoded-string and already-decoded-list
+    forms; return None for anything malformed.
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(raw, (list, tuple)) and raw:
+        try:
+            return float(raw[0])
+        except (ValueError, TypeError):
+            return None
+    return None
 
 
 class PolymarketMatcher:
@@ -84,10 +107,7 @@ class PolymarketClient:
             if any(kw in text for kw in slug_keywords) or any(
                 qw in text for qw in question_words
             ):
-                prices = market.get("outcomePrices", [])
-                if prices:
-                    try:
-                        return float(prices[0])
-                    except (ValueError, TypeError):
-                        pass
+                price = _first_outcome_price(market.get("outcomePrices"))
+                if price is not None:
+                    return price
         return None
