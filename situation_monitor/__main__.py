@@ -87,6 +87,10 @@ def _apply_env(config: Config) -> None:
         config.polymarket_markets = [s.strip() for s in v.split(",") if s.strip()]
     if v := os.environ.get("SM_POLYMARKET_SLUGS"):
         config.polymarket_slugs = [s.strip() for s in v.split(",") if s.strip()]
+    if v := os.environ.get("SM_TELEGRAM_TOKEN"):
+        config.telegram_token = v
+    if v := os.environ.get("SM_TELEGRAM_CHAT_ID"):
+        config.telegram_chat_id = v
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +458,26 @@ def _cmd_dossier(entity: str, config: Config) -> None:
         print(f"Flags: {', '.join(dossier.fabrication_flags)}")
 
 
+def _cmd_digest(config: Config) -> None:
+    """Ingest, assemble the Telegram digest, and send it if a token is configured."""
+    from situation_monitor.digest import send_daily_digest
+    from situation_monitor.dual_lens import group_by_event
+
+    articles = _ingest_and_enrich(config)
+    events = group_by_event(articles)
+
+    if config.llm_backend in ("offline", "stub"):
+        movers = []
+    else:
+        from situation_monitor.practical import fetch_practical_movers
+        try:
+            movers = fetch_practical_movers()
+        except Exception:
+            movers = []
+
+    send_daily_digest(events, movers, token=config.telegram_token, chat_id=config.telegram_chat_id)
+
+
 def _cmd_digest_dry_run(config: Config) -> None:
     """Assemble a Telegram digest from a fresh ingest and print it — never sends."""
     from situation_monitor.digest import daily_digest
@@ -505,6 +529,11 @@ def main(argv: list[str] | None = None) -> None:
         parents=[shared],
         help="Assemble a Telegram digest from recent events and print it — never sends",
     )
+    sub.add_parser(
+        "digest",
+        parents=[shared],
+        help="Ingest, assemble the Telegram digest, and send it (no-op when token is absent)",
+    )
     p_dossier = sub.add_parser(
         "dossier",
         parents=[shared],
@@ -534,6 +563,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_run(config)
     elif args.cmd == "digest-dry-run":
         _cmd_digest_dry_run(config)
+    elif args.cmd == "digest":
+        _cmd_digest(config)
     elif args.cmd == "dossier":
         _cmd_dossier(args.entity, config)
 

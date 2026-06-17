@@ -167,6 +167,11 @@ def main() -> None:
     if r2.returncode != 0:
         sys.exit(r2.returncode)
 
+    # Cmd 2b: digest — no token set; must exit 0 (no send, no crash)
+    r2b = _run("digest", config=_SOURCE_DEFS)
+    if r2b.returncode != 0:
+        sys.exit(r2b.returncode)
+
     # Cmd 3: carrier once — stdout must include a line starting with "discourse-carrier"
     carrier_env: dict = {
         **_STUB_ENV,
