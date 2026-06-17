@@ -9,7 +9,7 @@ from situation_monitor.config import DEFAULT_SOURCE_DEFS, Config, SourceDef
 from situation_monitor.dedup import deduplicate
 from situation_monitor.ingestion.base import HttpClient
 from situation_monitor.ingestion.rss import RSSFetcher
-from situation_monitor.models import Article, Domain
+from situation_monitor.models import Article
 
 
 @dataclass

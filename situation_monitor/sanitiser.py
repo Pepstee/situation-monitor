@@ -19,7 +19,7 @@ _MAX_BODY = 8000
 
 
 def _clean(text: str) -> str:
-    text = _TAG_RE.sub(" ", text)
+    text = _TAG_RE.sub(" ", text or "")
     text = html.unescape(text)
     text = _CTRL_RE.sub("", text)
     return _WS_RE.sub(" ", text).strip()
