@@ -1,0 +1,138 @@
+{
+  "version": "1.0",
+  "project": "Situation Monitor",
+  "description": "Lightweight situational-awareness tool that ingests local sample events and prints human-readable summaries",
+  "constraints": "No databases, no networking, no ML, no frameworks, no paid APIs",
+  "tasks": [
+    {
+      "id": "task_001",
+      "name": "Project Setup",
+      "description": "Initialize project structure, README, and configuration files",
+      "component": "infrastructure",
+      "depends_on": [],
+      "priority": 1,
+      "estimated_effort": "low",
+      "deliverables": [
+        "README.md",
+        "pyproject.toml or setup.py",
+        ".gitignore",
+        "directory structure (src/, tests/, data/)"
+      ]
+    },
+    {
+      "id": "task_002",
+      "name": "Define Core Data Models",
+      "description": "Create Event, Situation, and Summary data structures with type hints",
+      "component": "models",
+      "depends_on": ["task_001"],
+      "priority": 2,
+      "estimated_effort": "low",
+      "deliverables": [
+        "src/models.py (Event, Situation, Summary classes)"
+      ]
+    },
+    {
+      "id": "task_003",
+      "name": "Implement Event Loader",
+      "description": "Read sample events from JSON files or stdin, validate and parse events",
+      "component": "input",
+      "depends_on": ["task_002"],
+      "priority": 3,
+      "estimated_effort": "medium",
+      "deliverables": [
+        "src/loader.py (EventLoader class with JSON/file parsing)"
+      ]
+    },
+    {
+      "id": "task_004",
+      "name": "Implement Event Aggregator",
+      "description": "Process events, group by situation/context, compute statistics and patterns",
+      "component": "core",
+      "depends_on": ["task_003"],
+      "priority": 4,
+      "estimated_effort": "medium",
+      "deliverables": [
+        "src/aggregator.py (EventAggregator class with grouping, filtering, summary logic)"
+      ]
+    },
+    {
+      "id": "task_005",
+      "name": "Implement Output Formatter",
+      "description": "Format aggregated summaries into human-readable text, tables, or structured output",
+      "component": "output",
+      "depends_on": ["task_004"],
+      "priority": 5,
+      "estimated_effort": "medium",
+      "deliverables": [
+        "src/formatter.py (OutputFormatter class with text/table rendering)"
+      ]
+    },
+    {
+      "id": "task_006",
+      "name": "Implement CLI Interface",
+      "description": "Wire together loader, aggregator, and formatter; create main entry point with argument parsing",
+      "component": "interface",
+      "depends_on": ["task_005"],
+      "priority": 6,
+      "estimated_effort": "medium",
+      "deliverables": [
+        "src/cli.py (CLI argument parsing and orchestration)",
+        "src/__main__.py (entry point for python -m)"
+      ]
+    },
+    {
+      "id": "task_007",
+      "name": "Write Unit Tests",
+      "description": "Create tests for models, loader, aggregator, and formatter modules",
+      "component": "testing",
+      "depends_on": ["task_006"],
+      "priority": 7,
+      "estimated_effort": "medium",
+      "deliverables": [
+        "tests/test_models.py",
+        "tests/test_loader.py",
+        "tests/test_aggregator.py",
+        "tests/test_formatter.py"
+      ]
+    },
+    {
+      "id": "task_008",
+      "name": "Create Sample Data and Documentation",
+      "description": "Generate example event data files and write usage guide with examples",
+      "component": "documentation",
+      "depends_on": ["task_007"],
+      "priority": 8,
+      "estimated_effort": "low",
+      "deliverables": [
+        "data/sample_events.json",
+        "data/sample_events_complex.json",
+        "docs/USAGE.md",
+        "docs/EVENT_FORMAT.md"
+      ]
+    }
+  ],
+  "task_groups": {
+    "foundation": {
+      "description": "Base infrastructure and data models",
+      "tasks": ["task_001", "task_002"]
+    },
+    "core_processing": {
+      "description": "Event intake and analysis",
+      "tasks": ["task_003", "task_004"]
+    },
+    "presentation": {
+      "description": "Output and user interface",
+      "tasks": ["task_005", "task_006"]
+    },
+    "quality_assurance": {
+      "description": "Testing and documentation",
+      "tasks": ["task_007", "task_008"]
+    }
+  },
+  "dependency_summary": {
+    "critical_path": "task_001 -> task_002 -> task_003 -> task_004 -> task_005 -> task_006 -> task_007 -> task_008",
+    "parallelizable": "None (linear critical path)",
+    "estimated_total_effort": "medium (all tasks sequential)",
+    "estimated_timeline": "8 builder tasks, suitable for 2-3 development iterations"
+  }
+}

@@ -1,0 +1,22 @@
+SITUATION MONITOR - SUMMARIZATION PROMPT
+========================================
+
+This is a placeholder prompt template for future LLM-based event summarization.
+
+Currently, the Situation Monitor uses deterministic summarization (see monitor/summarize.py).
+No LLM is invoked during the current pipeline.
+
+Future Enhancement:
+If the system is extended to use an LLM for narrative summarization, this template
+can be populated with instructions for generating more detailed, context-aware summaries.
+
+Template Fields (for future use):
+- {total_events}: Total number of events
+- {categories}: Comma-separated list of event categories
+- {severities}: Comma-separated list of severity levels
+- {event_titles}: List of event titles
+- {time_range}: Time span covered by events
+
+Instructions:
+Summarize the following events in 2-3 sentences, highlighting the most critical items
+and overall situation status.
