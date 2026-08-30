@@ -36,7 +36,13 @@ def test_explicit_lifecycle_context_schema_and_pragmas(tmp_path):
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         ).fetchall()
     }
-    assert {"articles", "ingest_runs", "source_reliability", "sources"}.issubset(tables)
+    assert {
+        "alert_events",
+        "articles",
+        "ingest_runs",
+        "source_reliability",
+        "sources",
+    }.issubset(tables)
     assert {"checks", "events"}.isdisjoint(tables)
     store.close()
     store.close()
@@ -196,6 +202,64 @@ def test_sqlite_constraints_rollback_a_failed_cluster_transaction(tmp_path):
     assert count == 0
 
 
+def test_inclusive_alert_rule_persists_canonical_article_snapshots(tmp_path):
+    fixtures = fetch_fixture_articles("monitor/fixtures", ["rss"])
+    clusters = analyze_articles(fixtures)
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        store.save_clusters(clusters, seen_at=1_000.0)
+        created = store.evaluate_alert_rule(
+            "high-score", 20, severity="critical", fired_at=1_001.0
+        )
+        below = store.evaluate_alert_rule("too-high", 21, fired_at=1_002.0)
+
+    assert len(created) == 5
+    assert below == []
+    assert all(event.score == event.threshold == 20 for event in created)
+    assert all(event.severity == "critical" for event in created)
+    assert {event.title for event in created} == {article.title for article in fixtures}
+    assert all(event.resolved is False for event in created)
+
+
+def test_alert_rule_dedup_and_event_lifecycle_survive_reopen(tmp_path):
+    database_path = tmp_path / "state.sqlite3"
+    clusters = analyze_articles(fetch_fixture_articles("monitor/fixtures", ["rss"]))
+    with StateStore(database_path) as store:
+        store.save_clusters(clusters, seen_at=1_000.0)
+        created = store.evaluate_alert_rule("high-score", 20, fired_at=1_001.0)
+        first_id = created[0].alert_id
+
+    with StateStore(database_path) as store:
+        assert store.evaluate_alert_rule("high-score", 20, fired_at=2_000.0) == []
+        assert store.resolve_alert_event(first_id) is True
+        assert store.resolve_alert_event(999_999) is False
+        all_events = store.list_alert_events(limit=3)
+        open_events = store.list_alert_events(unresolved_only=True)
+
+    assert len(all_events) == 3
+    assert [event.alert_id for event in all_events] == sorted(
+        (event.alert_id for event in all_events), reverse=True
+    )
+    assert len(open_events) == 4
+    assert first_id not in {event.alert_id for event in open_events}
+
+
+def test_alert_rule_and_event_inputs_fail_closed_without_rows(tmp_path):
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        for rule, threshold, severity, message in (
+            (" ", 20, "warning", "rule_name"),
+            ("x", -1, "warning", "threshold"),
+            ("x", 101, "warning", "threshold"),
+            ("x", 20, "urgent", "severity"),
+        ):
+            with pytest.raises(ValueError, match=message):
+                store.evaluate_alert_rule(rule, threshold, severity=severity)
+        with pytest.raises(ValueError, match="limit"):
+            store.list_alert_events(limit=0)
+        with pytest.raises(ValueError, match="alert_id"):
+            store.resolve_alert_event(0)
+        assert store.list_alert_events() == []
+
+
 def test_existing_fetch_and_digest_outputs_remain_byte_exact(capsys):
     assert main(["fetch", "--dry-run"]) == 0
     fetch_output = capsys.readouterr().out.encode()
@@ -220,5 +284,13 @@ def test_schema_contains_no_external_effect_configuration(tmp_path):
         ).casefold()
     assert all(
         forbidden not in schema
-        for forbidden in ("http", "endpoint", "provider", "scheduler", "alert")
+        for forbidden in (
+            "http",
+            "endpoint",
+            "provider",
+            "scheduler",
+            "webhook",
+            "email",
+            "sms",
+        )
     )

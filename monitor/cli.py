@@ -11,10 +11,10 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from monitor.analysis import build_digest
+from monitor.analysis import analyze_articles, build_digest
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
-from monitor.storage import StateStore
+from monitor.storage import AlertEvent, StateStore
 from monitor.summarize import summarize
 
 
@@ -92,6 +92,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=3600,
         help="positive fixed interval for the selected source registrations",
     )
+
+    alerts_parser = subcommands.add_parser(
+        "alerts", help="evaluate and inspect local persisted threshold alerts"
+    )
+    alert_actions = alerts_parser.add_subparsers(dest="alert_action", required=True)
+
+    evaluate_parser = alert_actions.add_parser(
+        "evaluate", help="analyze local fixtures and persist newly fired alerts"
+    )
+    evaluate_parser.add_argument("--state", required=True)
+    evaluate_parser.add_argument("--at", required=True, type=float)
+    evaluate_parser.add_argument("--rule", default="high-score")
+    evaluate_parser.add_argument("--threshold", required=True, type=int)
+    evaluate_parser.add_argument(
+        "--severity", choices=("info", "warning", "critical"), default="warning"
+    )
+    evaluate_parser.add_argument("--fixture-dir", default=str(DEFAULT_FIXTURES))
+    evaluate_parser.add_argument(
+        "--source", action="append", choices=SOURCE_CHOICES, dest="sources"
+    )
+
+    list_parser = alert_actions.add_parser("list", help="list persisted alert events")
+    list_parser.add_argument("--state", required=True)
+    list_parser.add_argument("--unresolved", action="store_true")
+    list_parser.add_argument("--limit", type=int, default=20)
+
+    resolve_parser = alert_actions.add_parser(
+        "resolve", help="mark one persisted alert event resolved"
+    )
+    resolve_parser.add_argument("alert_id", type=int)
+    resolve_parser.add_argument("--state", required=True)
     return parser
 
 
@@ -137,6 +168,21 @@ def _check_record(result: SourceCheckResult) -> dict[str, object]:
     }
 
 
+def _alert_record(event: AlertEvent) -> dict[str, object]:
+    return {
+        "alert_id": event.alert_id,
+        "fired_at": event.fired_at,
+        "resolved": event.resolved,
+        "rule": event.rule_name,
+        "score": event.score,
+        "severity": event.severity,
+        "source": event.source,
+        "threshold": event.threshold,
+        "title": event.title,
+        "url": event.url,
+    }
+
+
 def _run_fixture_tick(
     state_path: str,
     fixture_dir: str,
@@ -171,6 +217,73 @@ def _run_fixture_tick(
     return 0
 
 
+def _run_fixture_alert_evaluation(
+    state_path: str,
+    fixture_dir: str,
+    sources: list[str] | None,
+    *,
+    evaluated_at: float,
+    rule_name: str,
+    threshold: int,
+    severity: str,
+) -> int:
+    """Analyze local fixtures and retain newly fired SQLite alerts."""
+
+    articles = fetch_fixture_articles(fixture_dir, sources or SOURCE_CHOICES)
+    clusters = analyze_articles(articles)
+    with StateStore(state_path) as store:
+        analyzed_count = store.save_clusters(clusters, seen_at=evaluated_at)
+        created = store.evaluate_alert_rule(
+            rule_name,
+            threshold,
+            severity=severity,
+            fired_at=evaluated_at,
+        )
+    output = {
+        "analyzed_count": analyzed_count,
+        "created_count": len(created),
+        "evaluated_at": evaluated_at,
+        "events": [_alert_record(event) for event in created],
+        "mode": "fixture-alert-evaluation",
+        "network_attempted": False,
+        "rule": rule_name.strip(),
+        "severity": severity,
+        "threshold": threshold,
+    }
+    print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_alert_list(state_path: str, *, unresolved_only: bool, limit: int) -> int:
+    with StateStore(state_path) as store:
+        events = store.list_alert_events(
+            unresolved_only=unresolved_only,
+            limit=limit,
+        )
+    output = {
+        "count": len(events),
+        "events": [_alert_record(event) for event in events],
+        "mode": "local-alert-list",
+        "network_attempted": False,
+        "unresolved_only": unresolved_only,
+    }
+    print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_alert_resolution(state_path: str, alert_id: int) -> int:
+    with StateStore(state_path) as store:
+        resolved = store.resolve_alert_event(alert_id)
+    output = {
+        "alert_id": alert_id,
+        "mode": "local-alert-resolution",
+        "network_attempted": False,
+        "resolved": resolved,
+    }
+    print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if resolved else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -200,6 +313,33 @@ def main(argv: list[str] | None = None) -> int:
             checked_at=arguments.at,
             interval_s=arguments.interval_seconds,
         )
+    if arguments.command == "alerts":
+        if arguments.alert_action == "evaluate":
+            if not 0 <= arguments.threshold <= 100:
+                parser.error("--threshold must be between 0 and 100")
+            if not arguments.rule.strip():
+                parser.error("--rule must not be empty")
+            return _run_fixture_alert_evaluation(
+                arguments.state,
+                arguments.fixture_dir,
+                arguments.sources,
+                evaluated_at=arguments.at,
+                rule_name=arguments.rule,
+                threshold=arguments.threshold,
+                severity=arguments.severity,
+            )
+        if arguments.alert_action == "list":
+            if arguments.limit <= 0:
+                parser.error("--limit must be positive")
+            return _run_alert_list(
+                arguments.state,
+                unresolved_only=arguments.unresolved,
+                limit=arguments.limit,
+            )
+        if arguments.alert_action == "resolve":
+            if arguments.alert_id <= 0:
+                parser.error("alert_id must be positive")
+            return _run_alert_resolution(arguments.state, arguments.alert_id)
     parser.error(f"unknown command: {arguments.command}")
     return 2
 

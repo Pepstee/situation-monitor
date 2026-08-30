@@ -20,7 +20,7 @@ from monitor.analysis import (
 from schemas import Article, SourceReliability
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _DDL = f"""
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
@@ -79,6 +79,24 @@ CREATE TABLE IF NOT EXISTS source_reliability (
     mean_latency_ms   REAL NOT NULL DEFAULT 0.0,
     last_updated      REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS alert_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_name    TEXT NOT NULL,
+    threshold    INTEGER NOT NULL CHECK (threshold BETWEEN 0 AND 100),
+    severity     TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+    fingerprint  TEXT NOT NULL REFERENCES articles(fingerprint),
+    url          TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    score        INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100),
+    fired_at     REAL NOT NULL,
+    resolved     INTEGER NOT NULL DEFAULT 0 CHECK (resolved IN (0, 1)),
+    UNIQUE (rule_name, fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alert_events_open_fired
+    ON alert_events (resolved, fired_at DESC, id DESC);
 
 PRAGMA user_version = {SCHEMA_VERSION};
 """
@@ -141,6 +159,23 @@ class ReliabilityStats:
     @property
     def hit_rate(self) -> float:
         return self.success_count / self.run_count
+
+
+@dataclass(frozen=True)
+class AlertEvent:
+    """One immutable local threshold-rule firing for a persisted article."""
+
+    alert_id: int
+    rule_name: str
+    threshold: int
+    severity: str
+    fingerprint: str
+    url: str
+    title: str
+    source: str
+    score: int
+    fired_at: float
+    resolved: bool
 
 
 class StateStore:
@@ -589,6 +624,122 @@ class StateStore:
             )
             for row in self.conn.execute(query, parameters).fetchall()
         ]
+
+    def evaluate_alert_rule(
+        self,
+        rule_name: str,
+        threshold: int,
+        *,
+        severity: str = "warning",
+        fired_at: float | None = None,
+    ) -> list[AlertEvent]:
+        """Persist newly fired alerts for scored articles meeting an inclusive rule."""
+
+        normalized_rule = rule_name.strip()
+        if not normalized_rule:
+            raise ValueError("rule_name must not be empty")
+        if isinstance(threshold, bool) or not 0 <= threshold <= 100:
+            raise ValueError("threshold must be between 0 and 100")
+        if severity not in {"info", "warning", "critical"}:
+            raise ValueError("severity must be info, warning, or critical")
+        observed_at = time.time() if fired_at is None else fired_at
+        created: list[AlertEvent] = []
+        with self._transaction() as cursor:
+            candidates = cursor.execute(
+                "SELECT fingerprint, url, title, source, score FROM articles "
+                "WHERE score >= ? ORDER BY score DESC, fingerprint",
+                (threshold,),
+            ).fetchall()
+            for row in candidates:
+                cursor.execute(
+                    """
+                    INSERT INTO alert_events (
+                        rule_name, threshold, severity, fingerprint, url, title,
+                        source, score, fired_at, resolved
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    ON CONFLICT(rule_name, fingerprint) DO NOTHING
+                    """,
+                    (
+                        normalized_rule,
+                        threshold,
+                        severity,
+                        row["fingerprint"],
+                        row["url"],
+                        row["title"],
+                        row["source"],
+                        row["score"],
+                        observed_at,
+                    ),
+                )
+                if cursor.rowcount == 0:
+                    continue
+                assert cursor.lastrowid is not None
+                created.append(
+                    AlertEvent(
+                        alert_id=cursor.lastrowid,
+                        rule_name=normalized_rule,
+                        threshold=threshold,
+                        severity=severity,
+                        fingerprint=row["fingerprint"],
+                        url=row["url"],
+                        title=row["title"],
+                        source=row["source"],
+                        score=row["score"],
+                        fired_at=observed_at,
+                        resolved=False,
+                    )
+                )
+        return created
+
+    def list_alert_events(
+        self,
+        *,
+        unresolved_only: bool = False,
+        limit: int = 100,
+    ) -> list[AlertEvent]:
+        """Return persisted alert events newest-first with an optional open filter."""
+
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        query = (
+            "SELECT id, rule_name, threshold, severity, fingerprint, url, title, "
+            "source, score, fired_at, resolved FROM alert_events"
+        )
+        if unresolved_only:
+            query += " WHERE resolved = 0"
+        query += " ORDER BY fired_at DESC, id DESC LIMIT ?"
+        return [
+            self._alert_event(row)
+            for row in self.conn.execute(query, (limit,)).fetchall()
+        ]
+
+    def resolve_alert_event(self, alert_id: int) -> bool:
+        """Resolve one alert event, returning whether a row existed."""
+
+        if alert_id <= 0:
+            raise ValueError("alert_id must be positive")
+        with self._transaction() as cursor:
+            cursor.execute(
+                "UPDATE alert_events SET resolved = 1 WHERE id = ?",
+                (alert_id,),
+            )
+            return cursor.rowcount == 1
+
+    @staticmethod
+    def _alert_event(row: sqlite3.Row) -> AlertEvent:
+        return AlertEvent(
+            alert_id=row["id"],
+            rule_name=row["rule_name"],
+            threshold=row["threshold"],
+            severity=row["severity"],
+            fingerprint=row["fingerprint"],
+            url=row["url"],
+            title=row["title"],
+            source=row["source"],
+            score=row["score"],
+            fired_at=row["fired_at"],
+            resolved=bool(row["resolved"]),
+        )
 
     def reliability(self, source: str) -> ReliabilityStats | None:
         """Return run-derived reliability for one source, if recorded."""

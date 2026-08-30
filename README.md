@@ -75,12 +75,26 @@ Expected options:
 - `--group-by FIELD`: group events by field (e.g., category, severity)
 - `--filter EXPR`: filter events before aggregation (e.g., severity >= ERROR)
 
+### Local alert events
+
+Evaluate an inclusive score rule against bundled local fixtures and retain only new
+firings in an explicit SQLite state file:
+
+```bash
+python3 -m monitor alerts evaluate --state state.sqlite3 --at 5000 --threshold 20
+python3 -m monitor alerts list --state state.sqlite3 --unresolved
+python3 -m monitor alerts resolve 1 --state state.sqlite3
+```
+
+This path performs no network calls, callbacks, or external notifications.
+
 ## Current Limitations
 
 This is a **bounded scaffold**. The following are intentionally out of scope:
 
 - **No realtime ingestion:** Events are read from static JSON files only.
-- **No persistent storage:** No database, file caching, or state between runs.
+- **No implicit persistent storage:** Stateful commands require an explicit `--state`
+  SQLite path; summary and dry-run fetch commands remain side-effect free.
 - **No remote sources:** No API calls, network I/O, or external data fetches.
 - **No machine learning:** No anomaly detection, predictions, or statistical modeling.
 - **No UI/visualization:** Terminal output only; no web interface or graphing.
