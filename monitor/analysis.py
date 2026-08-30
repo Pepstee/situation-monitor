@@ -201,10 +201,9 @@ def analyze_articles(
     )
 
 
-def generate_digest(clusters: list[ArticleCluster]) -> str:
-    """Render score-ranked clusters as deterministic inspectable Markdown."""
+def rank_clusters_for_digest(clusters: list[ArticleCluster]) -> list[ArticleCluster]:
+    """Return clusters and their members in the canonical deterministic digest order."""
 
-    lines = ["# Situation Monitor Digest", ""]
     ordered_clusters = [
         cluster
         for _position, cluster in sorted(
@@ -212,18 +211,32 @@ def generate_digest(clusters: list[ArticleCluster]) -> str:
             key=lambda pair: (-pair[1].top_score, pair[0]),
         )
     ]
-    for cluster in ordered_clusters:
-        lines.extend((f"## Cluster {cluster.cluster_id}", ""))
-        ordered_articles = sorted(
-            cluster.articles,
-            key=lambda item: (
-                -item.score,
-                item.article.source.casefold(),
-                item.article.title.casefold(),
-                item.article.url,
+    return [
+        ArticleCluster(
+            cluster_id=cluster.cluster_id,
+            articles=tuple(
+                sorted(
+                    cluster.articles,
+                    key=lambda item: (
+                        -item.score,
+                        item.article.source.casefold(),
+                        item.article.title.casefold(),
+                        item.article.url,
+                    ),
+                )
             ),
         )
-        for item in ordered_articles:
+        for cluster in ordered_clusters
+    ]
+
+
+def generate_digest(clusters: list[ArticleCluster]) -> str:
+    """Render score-ranked clusters as deterministic inspectable Markdown."""
+
+    lines = ["# Situation Monitor Digest", ""]
+    for cluster in rank_clusters_for_digest(clusters):
+        lines.extend((f"## Cluster {cluster.cluster_id}", ""))
+        for item in cluster.articles:
             article = item.article
             lines.append(
                 f"- [{article.title}]({article.url}) — {article.source} | "
