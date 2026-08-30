@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -53,6 +54,48 @@ def test_explicit_lifecycle_context_schema_and_pragmas(tmp_path):
         assert reopened.conn is not None
     with pytest.raises(RuntimeError, match="not open"):
         _ = reopened.conn
+
+    with StateStore(database_path, read_only=True) as reader:
+        with pytest.raises(RuntimeError, match="cannot initialize"):
+            reader.init_schema()
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            reader.conn.execute("DELETE FROM articles")
+
+
+def test_read_only_store_sees_committed_wal_state_from_an_open_writer(tmp_path):
+    database_path = tmp_path / "state.sqlite3"
+    with StateStore(database_path) as writer:
+        writer.register_source("rss", "rss", interval_s=60)
+        writer.record_run(
+            "rss",
+            started_at=1.0,
+            finished_at=2.0,
+            item_count=3,
+        )
+
+        assert Path(f"{database_path}-wal").is_file()
+        assert Path(f"{database_path}-shm").is_file()
+        with StateStore(database_path, read_only=True) as reader:
+            assert [source.name for source in reader.list_sources()] == ["rss"]
+            assert [run.item_count for run in reader.list_runs()] == [3]
+
+
+def test_read_only_store_refuses_incomplete_wal_sidecars_without_writing(tmp_path):
+    database_path = tmp_path / "state.sqlite3"
+    with StateStore(database_path):
+        pass
+    wal_path = Path(f"{database_path}-wal")
+    wal_path.write_bytes(b"incomplete")
+    before = {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    }
+
+    with pytest.raises(RuntimeError, match="incomplete WAL sidecar"):
+        StateStore(database_path, read_only=True).open()
+
+    assert {
+        path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()
+    } == before
 
 
 def test_fixture_analysis_round_trips_canonical_types_across_reopen(tmp_path):
@@ -234,6 +277,7 @@ def test_alert_rule_dedup_and_event_lifecycle_survive_reopen(tmp_path):
         assert store.resolve_alert_event(999_999) is False
         all_events = store.list_alert_events(limit=3)
         open_events = store.list_alert_events(unresolved_only=True)
+        counts = store.alert_event_counts()
 
     assert len(all_events) == 3
     assert [event.alert_id for event in all_events] == sorted(
@@ -241,6 +285,7 @@ def test_alert_rule_dedup_and_event_lifecycle_survive_reopen(tmp_path):
     )
     assert len(open_events) == 4
     assert first_id not in {event.alert_id for event in open_events}
+    assert counts == (5, 4)
 
 
 def test_alert_rule_and_event_inputs_fail_closed_without_rows(tmp_path):

@@ -88,6 +88,19 @@ python3 -m monitor alerts resolve 1 --state state.sqlite3
 
 This path performs no network calls, callbacks, or external notifications.
 
+### Local dashboard snapshot
+
+Inspect an existing state file without starting a server or modifying the database:
+
+```bash
+python3 -m monitor dashboard --state state.sqlite3 --at 5000 --window-hours 24
+```
+
+The command emits a deterministic JSON snapshot of recent analyzed articles, completed
+run receipts, registered-source schedules, and the resolved/unresolved alert lifecycle.
+`--state` must name an existing SQLite file and `--at` is always explicit. The command
+opens state read-only and performs no network calls, callbacks, providers, or daemons.
+
 ## Current Limitations
 
 This is a **bounded scaffold**. The following are intentionally out of scope:

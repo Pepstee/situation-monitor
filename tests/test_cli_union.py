@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import socket
 import urllib.request
 
 import pytest
 
 from monitor.cli import main
+from monitor.storage import StateStore
 
 
 def test_fetch_dry_run_is_deterministic_and_offline(monkeypatch, capsys):
@@ -186,5 +188,172 @@ def test_alert_cli_rejects_invalid_rule_threshold_limit_and_identifier(capsys):
     for command, message in invalid_commands:
         with pytest.raises(SystemExit) as exc_info:
             main(command)
+        assert exc_info.value.code == 2
+        assert message in capsys.readouterr().err
+
+
+def test_dashboard_is_deterministic_read_only_and_covers_local_lifecycle(
+    tmp_path, monkeypatch, capsys
+):
+    def forbidden(*args, **kwargs):
+        raise AssertionError(
+            f"network function called: args={args!r} kwargs={kwargs!r}"
+        )
+
+    monkeypatch.setattr(socket, "create_connection", forbidden)
+    monkeypatch.setattr(urllib.request, "urlopen", forbidden)
+    state_path = tmp_path / "state.sqlite3"
+    assert (
+        main(
+            [
+                "tick",
+                "--state",
+                str(state_path),
+                "--at",
+                "1000",
+                "--source",
+                "rss",
+                "--interval-seconds",
+                "60",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "alerts",
+                "evaluate",
+                "--state",
+                str(state_path),
+                "--at",
+                "1001",
+                "--rule",
+                "rss-score",
+                "--threshold",
+                "20",
+                "--source",
+                "rss",
+            ]
+        )
+        == 0
+    )
+    evaluated = json.loads(capsys.readouterr().out)
+    assert (
+        main(
+            [
+                "alerts",
+                "resolve",
+                str(evaluated["events"][0]["alert_id"]),
+                "--state",
+                str(state_path),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    state_files_before = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in tmp_path.iterdir()
+        if path.is_file()
+    }
+    command = [
+        "dashboard",
+        "--state",
+        str(state_path),
+        "--at",
+        "1059",
+        "--window-hours",
+        "24",
+        "--limit",
+        "2",
+    ]
+    assert main(command) == 0
+    first = capsys.readouterr().out
+    assert main(command) == 0
+    second = capsys.readouterr().out
+    assert first == second
+    assert {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in tmp_path.iterdir()
+        if path.is_file()
+    } == state_files_before
+
+    snapshot = json.loads(first)
+    assert snapshot["schema"] == "situation-monitor.dashboard.v1"
+    assert snapshot["generated_at"] == 1059.0
+    assert snapshot["network_attempted"] is False
+    assert snapshot["articles"]["total_count"] == 5
+    assert snapshot["articles"]["shown_count"] == 2
+    assert all(item["score"] == 20 for item in snapshot["articles"]["items"])
+    assert snapshot["run_receipts"] == {
+        "failed_count": 0,
+        "items": [
+            {
+                "error": None,
+                "finished_at": 1000.0,
+                "item_count": 5,
+                "run_id": 1,
+                "source": "rss",
+                "started_at": 1000.0,
+                "status": "succeeded",
+            }
+        ],
+        "shown_count": 1,
+        "succeeded_count": 1,
+        "total_count": 1,
+    }
+    assert snapshot["sources"]["due_count"] == 0
+    assert snapshot["sources"]["items"] == [
+        {
+            "due": False,
+            "due_at": 1060.0,
+            "enabled": True,
+            "fixture_source": "rss",
+            "hit_rate": 1.0,
+            "interval_seconds": 60,
+            "last_finished_at": 1000.0,
+            "last_run_id": 1,
+            "last_status": "succeeded",
+            "name": "rss",
+            "run_count": 1,
+            "success_count": 1,
+        }
+    ]
+    assert snapshot["alerts"]["total_count"] == 5
+    assert snapshot["alerts"]["unresolved_count"] == 4
+    assert snapshot["alerts"]["resolved_count"] == 1
+    assert snapshot["alerts"]["shown_count"] == 2
+
+    due_command = [*command]
+    due_command[due_command.index("1059")] = "1060"
+    assert main(due_command) == 0
+    due_snapshot = json.loads(capsys.readouterr().out)
+    assert due_snapshot["sources"]["due_count"] == 1
+    assert due_snapshot["sources"]["items"][0]["due"] is True
+
+
+def test_dashboard_refuses_missing_state(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["dashboard", "--state", "missing.sqlite3", "--at", "1"])
+    assert exc_info.value.code == 2
+    assert "--state" in capsys.readouterr().err
+
+
+def test_dashboard_rejects_nonfinite_time_and_invalid_bounds(tmp_path, capsys):
+    state_path = tmp_path / "state.sqlite3"
+    with StateStore(state_path):
+        pass
+    invalid_commands = (
+        (["--at", "nan"], "--at"),
+        (["--at", "1", "--window-hours", "inf"], "--window-hours"),
+        (["--at", "1", "--window-hours", "-1"], "--window-hours"),
+        (["--at", "1", "--limit", "0"], "--limit"),
+    )
+    for arguments, message in invalid_commands:
+        with pytest.raises(SystemExit) as exc_info:
+            main(["dashboard", "--state", str(state_path), *arguments])
         assert exc_info.value.code == 2
         assert message in capsys.readouterr().err

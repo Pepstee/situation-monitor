@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -181,18 +182,69 @@ class AlertEvent:
 class StateStore:
     """Explicit-lifecycle SQLite owner with no import-time or default-path effects."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, read_only: bool = False) -> None:
         self._path = str(path)
+        self._read_only = read_only
         self._conn: sqlite3.Connection | None = None
+        self._snapshot_directory: tempfile.TemporaryDirectory[str] | None = None
+
+    @staticmethod
+    def _snapshot_identity(path: Path) -> tuple[int, int, int, int]:
+        stat = path.stat()
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+    def _private_immutable_snapshot(self, database_path: Path) -> Path:
+        before = self._snapshot_identity(database_path)
+        first = database_path.read_bytes()
+        middle = self._snapshot_identity(database_path)
+        second = database_path.read_bytes()
+        after = self._snapshot_identity(database_path)
+        if before != middle or middle != after or first != second:
+            raise RuntimeError("read-only StateStore source changed during snapshot")
+        if (
+            Path(f"{database_path}-wal").exists()
+            or Path(f"{database_path}-shm").exists()
+        ):
+            raise RuntimeError("read-only StateStore source changed during snapshot")
+        self._snapshot_directory = tempfile.TemporaryDirectory(
+            prefix="situation-monitor-dashboard-"
+        )
+        snapshot = Path(self._snapshot_directory.name) / "state.sqlite3"
+        snapshot.write_bytes(first)
+        snapshot.chmod(0o600)
+        return snapshot
 
     def open(self) -> None:
         if self._conn is not None:
             return
-        self._conn = sqlite3.connect(self._path, check_same_thread=False)
+        if self._read_only:
+            database_path = Path(self._path).absolute()
+            wal_path = Path(f"{database_path}-wal")
+            shm_path = Path(f"{database_path}-shm")
+            if wal_path.exists() != shm_path.exists():
+                raise RuntimeError(
+                    "read-only StateStore refuses an incomplete WAL sidecar set"
+                )
+            if wal_path.exists():
+                database = f"{database_path.as_uri()}?mode=ro"
+            else:
+                snapshot = self._private_immutable_snapshot(database_path)
+                database = f"{snapshot.as_uri()}?mode=ro&immutable=1"
+        else:
+            database = self._path
+        self._conn = sqlite3.connect(
+            database,
+            check_same_thread=False,
+            uri=self._read_only,
+        )
         self._conn.row_factory = sqlite3.Row
+        if self._read_only:
+            self._conn.execute("PRAGMA query_only = ON")
         self._conn.execute("PRAGMA foreign_keys = ON")
 
     def init_schema(self) -> None:
+        if self._read_only:
+            raise RuntimeError("read-only StateStore cannot initialize schema")
         self.open()
         self.conn.executescript(_DDL)
         self.conn.commit()
@@ -201,9 +253,15 @@ class StateStore:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+        if self._snapshot_directory is not None:
+            self._snapshot_directory.cleanup()
+            self._snapshot_directory = None
 
     def __enter__(self) -> StateStore:
-        self.init_schema()
+        if self._read_only:
+            self.open()
+        else:
+            self.init_schema()
         return self
 
     def __exit__(self, *_exc_info: object) -> None:
@@ -712,6 +770,17 @@ class StateStore:
             self._alert_event(row)
             for row in self.conn.execute(query, (limit,)).fetchall()
         ]
+
+    def alert_event_counts(self) -> tuple[int, int]:
+        """Return total and unresolved alert counts for a closed local snapshot."""
+
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS total, "
+            "COALESCE(SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END), 0) "
+            "AS unresolved FROM alert_events"
+        ).fetchone()
+        assert row is not None
+        return int(row["total"]), int(row["unresolved"])
 
     def resolve_alert_event(self, alert_id: int) -> bool:
         """Resolve one alert event, returning whether a row existed."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections import Counter
 from pathlib import Path
@@ -14,7 +15,7 @@ if __package__ in {None, ""}:
 from monitor.analysis import analyze_articles, build_digest
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
-from monitor.storage import AlertEvent, StateStore
+from monitor.storage import AlertEvent, RunRecord, StateStore, StoredArticle
 from monitor.summarize import summarize
 
 
@@ -91,6 +92,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=3600,
         help="positive fixed interval for the selected source registrations",
+    )
+
+    dashboard_parser = subcommands.add_parser(
+        "dashboard", help="inspect a deterministic read-only local state snapshot"
+    )
+    dashboard_parser.add_argument(
+        "--state",
+        required=True,
+        help="explicit existing SQLite state path; the snapshot never creates state",
+    )
+    dashboard_parser.add_argument(
+        "--at",
+        required=True,
+        type=float,
+        help="deterministic snapshot timestamp as Unix seconds",
+    )
+    dashboard_parser.add_argument(
+        "--window-hours",
+        type=float,
+        default=24.0,
+        help="non-negative recent-article window (default: 24)",
+    )
+    dashboard_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="positive maximum rows shown per collection (default: 20)",
     )
 
     alerts_parser = subcommands.add_parser(
@@ -180,6 +208,35 @@ def _alert_record(event: AlertEvent) -> dict[str, object]:
         "threshold": event.threshold,
         "title": event.title,
         "url": event.url,
+    }
+
+
+def _dashboard_article_record(item: StoredArticle) -> dict[str, object]:
+    scored = item.scored
+    return {
+        "cluster_id": item.cluster_id,
+        "confidence_high": None if scored is None else scored.confidence_high,
+        "confidence_low": None if scored is None else scored.confidence_low,
+        "digest_rank": item.digest_rank,
+        "reliability": item.article.reliability.value,
+        "score": None if scored is None else scored.score,
+        "seen_at": item.seen_at,
+        "signals": [] if scored is None else list(scored.signals),
+        "source": item.article.source,
+        "title": item.article.title,
+        "url": item.article.url,
+    }
+
+
+def _run_record(run: RunRecord) -> dict[str, object]:
+    return {
+        "error": run.error,
+        "finished_at": run.finished_at,
+        "item_count": run.item_count,
+        "run_id": run.run_id,
+        "source": run.source,
+        "started_at": run.started_at,
+        "status": "succeeded" if run.error is None else "failed",
     }
 
 
@@ -284,6 +341,102 @@ def _run_alert_resolution(state_path: str, alert_id: int) -> int:
     return 0 if resolved else 1
 
 
+def _run_dashboard(
+    state_path: str,
+    *,
+    snapshot_at: float,
+    window_hours: float,
+    limit: int,
+) -> int:
+    """Render one transactionally closed, read-only JSON state snapshot."""
+
+    with StateStore(state_path, read_only=True) as store:
+        store.conn.execute("BEGIN")
+        try:
+            articles = store.recent_articles(window_hours, now=snapshot_at)
+            runs = store.list_runs()
+            alerts = store.list_alert_events(limit=limit)
+            alert_count, unresolved_count = store.alert_event_counts()
+            sources = store.list_sources()
+            due_names = {
+                item.source.name for item in store.due_sources(now=snapshot_at)
+            }
+            reliability = {item.source: item for item in store.all_reliability()}
+        finally:
+            store.conn.rollback()
+
+    last_runs: dict[str, RunRecord] = {}
+    for run in runs:
+        last_runs.setdefault(run.source, run)
+    source_records: list[dict[str, object]] = []
+    for source in sources:
+        last_run = last_runs.get(source.name)
+        stats = reliability.get(source.name)
+        due_at = (
+            None
+            if not source.enabled
+            else snapshot_at
+            if last_run is None
+            else last_run.finished_at + source.interval_s
+        )
+        source_records.append(
+            {
+                "due": source.name in due_names,
+                "due_at": due_at,
+                "enabled": source.enabled,
+                "fixture_source": source.fixture_source,
+                "hit_rate": None if stats is None else stats.hit_rate,
+                "interval_seconds": source.interval_s,
+                "last_finished_at": None if last_run is None else last_run.finished_at,
+                "last_run_id": None if last_run is None else last_run.run_id,
+                "last_status": None
+                if last_run is None
+                else "succeeded"
+                if last_run.error is None
+                else "failed",
+                "name": source.name,
+                "run_count": 0 if stats is None else stats.run_count,
+                "success_count": 0 if stats is None else stats.success_count,
+            }
+        )
+
+    output = {
+        "alerts": {
+            "items": [_alert_record(event) for event in alerts],
+            "resolved_count": alert_count - unresolved_count,
+            "shown_count": len(alerts),
+            "total_count": alert_count,
+            "unresolved_count": unresolved_count,
+        },
+        "articles": {
+            "items": [_dashboard_article_record(item) for item in articles[:limit]],
+            "shown_count": min(len(articles), limit),
+            "total_count": len(articles),
+            "window_hours": window_hours,
+        },
+        "generated_at": snapshot_at,
+        "limit": limit,
+        "mode": "local-dashboard-snapshot",
+        "network_attempted": False,
+        "run_receipts": {
+            "failed_count": sum(run.error is not None for run in runs),
+            "items": [_run_record(run) for run in runs[:limit]],
+            "shown_count": min(len(runs), limit),
+            "succeeded_count": sum(run.error is None for run in runs),
+            "total_count": len(runs),
+        },
+        "schema": "situation-monitor.dashboard.v1",
+        "sources": {
+            "due_count": sum(item["due"] is True for item in source_records),
+            "items": source_records[:limit],
+            "shown_count": min(len(source_records), limit),
+            "total_count": len(source_records),
+        },
+    }
+    print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
@@ -312,6 +465,21 @@ def main(argv: list[str] | None = None) -> int:
             arguments.sources,
             checked_at=arguments.at,
             interval_s=arguments.interval_seconds,
+        )
+    if arguments.command == "dashboard":
+        if not Path(arguments.state).is_file():
+            parser.error("--state must name an existing SQLite file")
+        if not math.isfinite(arguments.at):
+            parser.error("--at must be finite")
+        if not math.isfinite(arguments.window_hours) or arguments.window_hours < 0:
+            parser.error("--window-hours must be finite and non-negative")
+        if arguments.limit <= 0:
+            parser.error("--limit must be positive")
+        return _run_dashboard(
+            arguments.state,
+            snapshot_at=arguments.at,
+            window_hours=arguments.window_hours,
+            limit=arguments.limit,
         )
     if arguments.command == "alerts":
         if arguments.alert_action == "evaluate":
