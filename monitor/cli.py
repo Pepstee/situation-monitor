@@ -11,6 +11,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from monitor.analysis import build_digest
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.summarize import summarize
 
@@ -50,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="sources",
         help="source parser to exercise; repeat to select multiple (default: all)",
     )
+    fetch_parser.add_argument(
+        "--digest",
+        action="store_true",
+        help="run deterministic scoring, deduplication, clustering, and Markdown digesting",
+    )
     return parser
 
 
@@ -61,8 +67,16 @@ def _run_summary(input_file: str) -> int:
     return 0
 
 
-def _run_fixture_fetch(fixture_dir: str, sources: list[str] | None) -> int:
+def _run_fixture_fetch(
+    fixture_dir: str,
+    sources: list[str] | None,
+    *,
+    digest: bool = False,
+) -> int:
     articles = fetch_fixture_articles(fixture_dir, sources or SOURCE_CHOICES)
+    if digest:
+        print(build_digest(articles), end="")
+        return 0
     source_counts = Counter(article.source for article in articles)
     result = {
         "articles": [article_record(article) for article in articles],
@@ -89,7 +103,11 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(
                 "fetch currently requires --dry-run; live network ingestion is deferred"
             )
-        return _run_fixture_fetch(arguments.fixture_dir, arguments.sources)
+        return _run_fixture_fetch(
+            arguments.fixture_dir,
+            arguments.sources,
+            digest=arguments.digest,
+        )
     parser.error(f"unknown command: {arguments.command}")
     return 2
 
