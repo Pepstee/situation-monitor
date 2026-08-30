@@ -3,9 +3,44 @@
 Defines the Event data model with validation for incoming event data.
 """
 
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, Optional
+
+
+class SourceReliability(str, Enum):
+    """Coarse, explicit confidence in an article's source."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class Article:
+    """A normalized article emitted by every canonical ingestion adapter."""
+
+    url: str
+    title: str
+    source: str
+    body: str = ""
+    published_at: Optional[datetime] = None
+    reliability: SourceReliability = SourceReliability.UNKNOWN
+    tags: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        for field_name in ("url", "title", "source"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Article.{field_name} must not be empty")
+        if not isinstance(self.reliability, SourceReliability):
+            raise TypeError("Article.reliability must be a SourceReliability")
+        if not isinstance(self.tags, list) or not all(
+            isinstance(tag, str) for tag in self.tags
+        ):
+            raise TypeError("Article.tags must be a list of strings")
 
 
 @dataclass
@@ -65,7 +100,15 @@ class Event:
         if not isinstance(data, dict):
             raise ValueError(f"Expected dict, got {type(data).__name__}")
 
-        required_fields = {"id", "title", "source", "timestamp", "category", "severity", "summary"}
+        required_fields = {
+            "id",
+            "title",
+            "source",
+            "timestamp",
+            "category",
+            "severity",
+            "summary",
+        }
         missing_fields = required_fields - set(data.keys())
 
         if missing_fields:

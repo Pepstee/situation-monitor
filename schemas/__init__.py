@@ -1,5 +1,5 @@
 """Schemas module for Situation Monitor."""
 
-from .event_schema import Event
+from .event_schema import Article, Event, SourceReliability
 
-__all__ = ["Event"]
+__all__ = ["Article", "Event", "SourceReliability"]

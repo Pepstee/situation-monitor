@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Tech News Daily</title>
+    <link>https://technewsdaily.example.com</link>
+    <description>The latest technology news and analysis</description>
+    <language>en-us</language>
+    <lastBuildDate>Tue, 03 Jun 2026 12:00:00 +0000</lastBuildDate>
+
+    <item>
+      <title>Quantum computing reaches new milestone with 1000-qubit processor</title>
+      <link>https://technewsdaily.example.com/quantum-1000-qubits</link>
+      <description>Researchers at a leading university have demonstrated a stable 1000-qubit processor, marking a significant step toward practical quantum advantage in real-world applications.</description>
+      <pubDate>Tue, 03 Jun 2026 11:30:00 +0000</pubDate>
+      <guid>https://technewsdaily.example.com/quantum-1000-qubits</guid>
+    </item>
+
+    <item>
+      <title>Open-source AI model outperforms GPT-4 on coding benchmarks</title>
+      <link>https://technewsdaily.example.com/open-source-ai-coding</link>
+      <description>A newly released open-source language model has surpassed GPT-4 on the HumanEval and MBPP coding benchmarks while requiring significantly less compute for inference.</description>
+      <pubDate>Tue, 03 Jun 2026 10:00:00 +0000</pubDate>
+      <guid>https://technewsdaily.example.com/open-source-ai-coding</guid>
+    </item>
+
+    <item>
+      <title>Rust adoption surges in embedded systems development</title>
+      <link>https://technewsdaily.example.com/rust-embedded-adoption</link>
+      <description>A new survey reveals that 40% of embedded systems developers are now considering Rust for new projects, driven by safety guarantees and competitive performance with C.</description>
+      <pubDate>Tue, 03 Jun 2026 09:15:00 +0000</pubDate>
+      <guid>https://technewsdaily.example.com/rust-embedded-adoption</guid>
+    </item>
+
+    <item>
+      <title>New privacy regulations reshape data collection practices</title>
+      <link>https://technewsdaily.example.com/privacy-regulations-2026</link>
+      <description>Sweeping privacy legislation enacted in 12 countries this year is forcing major technology companies to overhaul their data collection and retention policies.</description>
+      <pubDate>Mon, 02 Jun 2026 16:45:00 +0000</pubDate>
+      <guid>https://technewsdaily.example.com/privacy-regulations-2026</guid>
+    </item>
+
+    <item>
+      <title>WebAssembly component model reaches stable specification</title>
+      <link>https://technewsdaily.example.com/wasm-component-model-stable</link>
+      <description>The W3C WebAssembly Working Group has published the stable specification for the WebAssembly Component Model, enabling language-agnostic module interoperability in both browser and server environments.</description>
+      <pubDate>Mon, 02 Jun 2026 14:00:00 +0000</pubDate>
+      <guid>https://technewsdaily.example.com/wasm-component-model-stable</guid>
+    </item>
+
+  </channel>
+</rss>

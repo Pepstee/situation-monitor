@@ -1,0 +1,58 @@
+{
+  "hits": [
+    {
+      "title": "Show HN: I built a terminal-based AI coding assistant",
+      "url": "https://github.com/example/ai-coder",
+      "objectID": "42345678",
+      "points": 487,
+      "author": "hacker42",
+      "created_at": "2026-06-03T08:30:00.000Z",
+      "story_text": null,
+      "num_comments": 142
+    },
+    {
+      "title": "How I reduced my cloud bill by 90% with one weird trick",
+      "url": "https://blog.example.com/cloud-bill-reduction",
+      "objectID": "42345679",
+      "points": 312,
+      "author": "cloudoptimizer",
+      "created_at": "2026-06-03T07:15:00.000Z",
+      "story_text": null,
+      "num_comments": 98
+    },
+    {
+      "title": "Ask HN: What's your favourite underrated productivity tool?",
+      "url": null,
+      "objectID": "42345680",
+      "points": 256,
+      "author": "curious_dev",
+      "created_at": "2026-06-03T06:00:00.000Z",
+      "story_text": "I'm looking for productivity tools that aren't widely known but have made a big difference in your workflow. Please share your gems.",
+      "num_comments": 321
+    },
+    {
+      "title": "New research shows LLMs can reason about their own uncertainty",
+      "url": "https://arxiv.org/abs/2606.00001",
+      "objectID": "42345681",
+      "points": 198,
+      "author": "mlresearcher",
+      "created_at": "2026-06-03T05:45:00.000Z",
+      "story_text": null,
+      "num_comments": 67
+    },
+    {
+      "title": "PostgreSQL 18 released with major performance improvements",
+      "url": "https://www.postgresql.org/about/news/postgresql-18-released",
+      "objectID": "42345682",
+      "points": 875,
+      "author": "dbadmin",
+      "created_at": "2026-06-02T22:00:00.000Z",
+      "story_text": null,
+      "num_comments": 203
+    }
+  ],
+  "nbHits": 100,
+  "page": 0,
+  "nbPages": 10,
+  "hitsPerPage": 30
+}

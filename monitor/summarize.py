@@ -39,7 +39,6 @@ def summarize(events: List[Event]) -> str:
         return "No events detected."
 
     # Count events by category and severity
-    total_events = len(events)
     category_counts = Counter(event.category for event in events)
     severity_counts = Counter(event.severity for event in events)
 
