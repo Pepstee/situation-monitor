@@ -36,8 +36,8 @@ def test_explicit_lifecycle_context_schema_and_pragmas(tmp_path):
             "SELECT name FROM sqlite_master WHERE type = 'table'"
         ).fetchall()
     }
-    assert {"articles", "ingest_runs", "source_reliability"}.issubset(tables)
-    assert {"sources", "checks", "events"}.isdisjoint(tables)
+    assert {"articles", "ingest_runs", "source_reliability", "sources"}.issubset(tables)
+    assert {"checks", "events"}.isdisjoint(tables)
     store.close()
     store.close()
     with pytest.raises(RuntimeError, match="not open"):

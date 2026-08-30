@@ -1,4 +1,4 @@
-"""Canonical local SQLite state for Situation Monitor Articles and run receipts."""
+"""Canonical local SQLite state for Articles, source registry, and run receipts."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from monitor.analysis import (
 from schemas import Article, SourceReliability
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _DDL = f"""
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
 CREATE INDEX IF NOT EXISTS idx_ingest_runs_source_finished
     ON ingest_runs (source, finished_at DESC);
 
+CREATE TABLE IF NOT EXISTS sources (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL UNIQUE,
+    fixture_source  TEXT NOT NULL,
+    interval_s      INTEGER NOT NULL CHECK (interval_s > 0),
+    enabled         INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sources_enabled_name
+    ON sources (enabled, name);
+
 CREATE TABLE IF NOT EXISTS source_reliability (
     source            TEXT PRIMARY KEY,
     run_count         INTEGER NOT NULL DEFAULT 0,
@@ -94,6 +105,26 @@ class RunRecord:
     finished_at: float
     item_count: int
     error: str | None
+
+
+@dataclass(frozen=True)
+class RegisteredSource:
+    """One explicitly registered fixture-backed source and its check interval."""
+
+    source_id: int
+    name: str
+    fixture_source: str
+    interval_s: int
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class DueSource:
+    """A source whose first or next persisted check is due."""
+
+    source: RegisteredSource
+    last_finished_at: float | None
+    due_at: float
 
 
 @dataclass(frozen=True)
@@ -193,6 +224,105 @@ class StateStore:
                     )
                     saved += 1
         return saved
+
+    def register_source(
+        self,
+        name: str,
+        fixture_source: str,
+        interval_s: int,
+        *,
+        enabled: bool = True,
+    ) -> int:
+        """Register or update one source without creating a parallel state owner."""
+
+        source_name = name.strip()
+        fixture_name = fixture_source.strip()
+        if not source_name:
+            raise ValueError("source name must not be empty")
+        if not fixture_name:
+            raise ValueError("fixture_source must not be empty")
+        if interval_s <= 0:
+            raise ValueError("interval_s must be positive")
+        with self._transaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO sources (name, fixture_source, interval_s, enabled)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    fixture_source = excluded.fixture_source,
+                    interval_s = excluded.interval_s,
+                    enabled = excluded.enabled
+                """,
+                (source_name, fixture_name, interval_s, int(enabled)),
+            )
+            row = cursor.execute(
+                "SELECT id FROM sources WHERE name = ?", (source_name,)
+            ).fetchone()
+        assert row is not None
+        return int(row["id"])
+
+    def list_sources(self, *, enabled_only: bool = False) -> list[RegisteredSource]:
+        """Return the source registry in stable name order."""
+
+        query = "SELECT id, name, fixture_source, interval_s, enabled FROM sources"
+        if enabled_only:
+            query += " WHERE enabled = 1"
+        query += " ORDER BY name"
+        return [
+            RegisteredSource(
+                source_id=row["id"],
+                name=row["name"],
+                fixture_source=row["fixture_source"],
+                interval_s=row["interval_s"],
+                enabled=bool(row["enabled"]),
+            )
+            for row in self.conn.execute(query).fetchall()
+        ]
+
+    def due_sources(self, *, now: float) -> list[DueSource]:
+        """Return enabled sources due at ``now`` from completed run state."""
+
+        rows = self.conn.execute(
+            """
+            SELECT
+                s.id,
+                s.name,
+                s.fixture_source,
+                s.interval_s,
+                s.enabled,
+                MAX(ir.finished_at) AS last_finished_at
+            FROM sources s
+            LEFT JOIN ingest_runs ir ON ir.source = s.name
+            WHERE s.enabled = 1
+            GROUP BY s.id
+            HAVING last_finished_at IS NULL
+                OR last_finished_at + s.interval_s <= ?
+            ORDER BY s.name
+            """,
+            (now,),
+        ).fetchall()
+        due: list[DueSource] = []
+        for row in rows:
+            source = RegisteredSource(
+                source_id=row["id"],
+                name=row["name"],
+                fixture_source=row["fixture_source"],
+                interval_s=row["interval_s"],
+                enabled=bool(row["enabled"]),
+            )
+            last_finished_at = row["last_finished_at"]
+            due.append(
+                DueSource(
+                    source=source,
+                    last_finished_at=last_finished_at,
+                    due_at=(
+                        now
+                        if last_finished_at is None
+                        else last_finished_at + source.interval_s
+                    ),
+                )
+            )
+        return due
 
     @staticmethod
     def _upsert_article(
@@ -356,37 +486,83 @@ class StateStore:
         if item_count < 0:
             raise ValueError("item_count must not be negative")
 
+        with self._transaction() as cursor:
+            run_id = self._insert_run(
+                cursor,
+                source,
+                started_at,
+                finished_at,
+                item_count=item_count,
+                error=error,
+            )
+        assert run_id is not None
+        return run_id
+
+    def record_source_check(
+        self,
+        source: str,
+        checked_at: float,
+        *,
+        articles: list[Article] | None = None,
+        error: str | None = None,
+    ) -> int:
+        """Atomically persist one deterministic fixture check and its Articles."""
+
+        checked_articles = articles or []
+        if error is not None and checked_articles:
+            raise ValueError("failed source checks cannot persist articles")
+        with self._transaction() as cursor:
+            for article in checked_articles:
+                self._upsert_article(cursor, article, None, None, None, checked_at)
+            return self._insert_run(
+                cursor,
+                source,
+                checked_at,
+                checked_at,
+                item_count=len(checked_articles),
+                error=error,
+            )
+
+    @staticmethod
+    def _insert_run(
+        cursor: sqlite3.Cursor,
+        source: str,
+        started_at: float,
+        finished_at: float,
+        *,
+        item_count: int,
+        error: str | None,
+    ) -> int:
         latency_ms = (finished_at - started_at) * 1000
         success = int(error is None)
-        with self._transaction() as cursor:
-            cursor.execute(
-                "INSERT INTO ingest_runs "
-                "(source, started_at, finished_at, item_count, error) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (source, started_at, finished_at, item_count, error),
-            )
-            run_id = cursor.lastrowid
-            cursor.execute(
-                """
-                INSERT INTO source_reliability (
-                    source, run_count, success_count, mean_latency_ms, last_updated
-                ) VALUES (?, 1, ?, ?, ?)
-                ON CONFLICT(source) DO UPDATE SET
-                    run_count = source_reliability.run_count + 1,
-                    success_count = source_reliability.success_count
-                        + excluded.success_count,
-                    mean_latency_ms = (
-                        source_reliability.mean_latency_ms
-                        * source_reliability.run_count
-                        + excluded.mean_latency_ms
-                    ) / (source_reliability.run_count + 1),
-                    last_updated = MAX(
-                        source_reliability.last_updated,
-                        excluded.last_updated
-                    )
-                """,
-                (source, success, latency_ms, finished_at),
-            )
+        cursor.execute(
+            "INSERT INTO ingest_runs "
+            "(source, started_at, finished_at, item_count, error) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (source, started_at, finished_at, item_count, error),
+        )
+        run_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO source_reliability (
+                source, run_count, success_count, mean_latency_ms, last_updated
+            ) VALUES (?, 1, ?, ?, ?)
+            ON CONFLICT(source) DO UPDATE SET
+                run_count = source_reliability.run_count + 1,
+                success_count = source_reliability.success_count
+                    + excluded.success_count,
+                mean_latency_ms = (
+                    source_reliability.mean_latency_ms
+                    * source_reliability.run_count
+                    + excluded.mean_latency_ms
+                ) / (source_reliability.run_count + 1),
+                last_updated = MAX(
+                    source_reliability.last_updated,
+                    excluded.last_updated
+                )
+            """,
+            (source, success, latency_ms, finished_at),
+        )
         assert run_id is not None
         return run_id
 
