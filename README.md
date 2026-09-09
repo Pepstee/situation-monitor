@@ -186,3 +186,21 @@ null. Popularity is source data, not the monitor's urgency score. SQLite schema 
 these values through analysis and restart. Opening an older database for writing upgrades
 it in place while preserving existing articles and run receipts. Read-only snapshots of
 schema 3 remain supported without altering the original database.
+
+### Scoring and alert delivery in watch
+
+Every collected batch is scored and persisted. The default scorer is offline. To use the
+archived JSON/Ollama protocol, explicitly provide `--model-endpoint URL` or `llm_endpoint`
+in configuration. This sends article content to that endpoint and can incur its provider
+costs. Failed responses are reported and recorded, with collected articles preserved.
+No paid endpoint was used in migration validation.
+
+`--alert-threshold 70` selects the inclusive 0–100 threshold. Legacy JSON
+`alert_threshold: 0.7` means the same value. `--alert-log PATH` (or configured `alert_log`)
+appends complete event JSON lines and prevents duplicate file delivery after restart.
+Alerts also print to stderr. Use one writer per state/log pair. A malformed existing log
+fails visibly and is not overwritten. Without a log, stderr alerts may repeat on restart.
+
+Programmatic `AlertRule` and `AlertManager` in `monitor.alerts` restore independent callback
+rules, reset and batch evaluation. Their deduplication is process-local. Persisted alert
+firing and resolution continue to belong to `StateStore`.

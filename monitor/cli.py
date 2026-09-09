@@ -7,13 +7,14 @@ import json
 import math
 import sys
 import logging
+import time
 from collections import Counter
 from pathlib import Path
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from monitor.analysis import analyze_articles, build_digest
+from monitor.analysis import analyze_articles, build_digest, HTTPScorer, score_article, cluster_scored_articles
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.ingest import fetch_live_articles
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
@@ -48,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--source", action="append", choices=SOURCE_CHOICES, dest="sources")
     watch_parser.add_argument("--fixture-dir", default=str(DEFAULT_FIXTURES))
     watch_parser.add_argument("--rss-url", action="append", default=[])
+    watch_parser.add_argument("--model-endpoint", help="explicit JSON/Ollama scoring URL")
+    watch_parser.add_argument("--alert-log", help="append delivered alert events as JSON lines")
+    watch_parser.add_argument("--alert-threshold", type=int, help="inclusive score threshold from 0 to 100")
 
     fetch_parser = subcommands.add_parser(
         "fetch", help="fetch explicitly selected live sources or inspect local fixtures"
@@ -321,6 +325,19 @@ def _run_watch(arguments) -> int:
         if arguments.live:
             return fetch_live_articles([source], rss_urls=arguments.rss_url)
         return fetch_fixture_articles(arguments.fixture_dir, [source])
+    model_endpoint = arguments.model_endpoint or config.llm_endpoint
+    scorer = HTTPScorer(model_endpoint) if model_endpoint else score_article
+    threshold = arguments.alert_threshold if arguments.alert_threshold is not None else math.ceil(config.alert_threshold * 100)
+    if not 0 <= threshold <= 100:
+        raise ValueError("alert threshold must be in [0, 100]")
+    from monitor.alerts import TextAlertDelivery
+    delivery = TextAlertDelivery(arguments.alert_log or config.alert_log)
+    collected = []
+    source_collect = collect
+    def collect(source):
+        articles = source_collect(source)
+        collected.extend(articles)
+        return articles
     failed = False
     with StateStore(state_path) as store:
         for name, source in zip(names, sources):
@@ -331,9 +348,36 @@ def _run_watch(arguments) -> int:
                 max_cycles=arguments.cycles, source_names=names,
             ):
                 failed = failed or any(result.error is not None for result in results)
+                scored, scoring_errors = [], []
+                started = time.time()
+                for article in collected:
+                    try:
+                        scored.append(scorer(article))
+                    except (OSError, ValueError) as exc:
+                        scoring_errors.append({"url": article.url, "error": str(exc)})
+                if scored:
+                    store.save_clusters(cluster_scored_articles(scored), seen_at=checked_at)
+                if model_endpoint and collected:
+                    store.record_run("llm", started, time.time(), item_count=len(scored),
+                        error=f"{len(scoring_errors)} item(s) failed scoring" if scoring_errors else None)
+                collected.clear()
+                failed = failed or bool(scoring_errors)
+                created = store.evaluate_alert_rule("watch-high-score", threshold, fired_at=checked_at)
+                delivery_errors = []
+                for event in store.list_alert_events(unresolved_only=True, limit=1_000_000):
+                    if event.rule_name != "watch-high-score":
+                        continue
+                    try:
+                        delivery(event)
+                    except (OSError, ValueError) as exc:
+                        delivery_errors.append({"alert_id": event.alert_id, "error": str(exc)})
+                failed = failed or bool(delivery_errors)
                 print(json.dumps({
                     "mode": "live-watch" if arguments.live else "fixture-watch",
-                    "checked_at": checked_at, "network_enabled": arguments.live,
+                    "checked_at": checked_at, "network_enabled": arguments.live or bool(model_endpoint),
+                    "scoring": "model" if model_endpoint else "deterministic",
+                    "scored_count": len(scored), "scoring_errors": scoring_errors,
+                    "created_alerts": len(created), "delivery_errors": delivery_errors,
                     "results": [_check_record(result) for result in results],
                 }, sort_keys=True), flush=True)
         except KeyboardInterrupt:

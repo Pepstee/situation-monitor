@@ -326,3 +326,23 @@ def test_watch_rejects_invalid_config_before_creating_state(tmp_path, capsys):
     assert main(["watch", "--config", str(config), "--cycles", "1"]) == 1
     assert not state.exists()
     assert "positive" in capsys.readouterr().err
+
+
+def test_watch_scores_and_delivers_alerts_with_fractional_legacy_threshold(tmp_path, capsys):
+    import json
+    from monitor.cli import main
+    config = tmp_path / 'config.json'
+    log = tmp_path / 'alerts.jsonl'
+    config.write_text(json.dumps({'db_path': str(tmp_path / 'state.sqlite3'),
+        'sources': ['hn'], 'alert_threshold': 0.2, 'alert_log': str(log)}))
+    assert main(['watch', '--config', str(config), '--cycles', '1']) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['scored_count'] == 5
+    assert output['created_alerts'] == 5 and output['delivery_errors'] == []
+    lines = log.read_text().splitlines()
+    assert len(lines) == 5
+    assert all(json.loads(line)['threshold'] == 20 for line in lines)
+    assert main(['watch', '--config', str(config), '--cycles', '1']) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output['created_alerts'] == 0 and output['delivery_errors'] == []
+    assert log.read_text().splitlines() == lines

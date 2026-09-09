@@ -342,3 +342,17 @@ Code graph: 685 nodes, 5753 edges, SHA-256 `88a6a1f3eadb68a7b2c1b53174aba64fe45c
 Document semantics remain historical/partial. No operator deadline was specified.
 Remaining critical work is alert delivery, optional model scoring and the HTTP dashboard,
 then Linux verification and migration. This project is not yet migration-complete.
+
+## Scoring and delivery reconciliation, 9 September 2026
+
+The canonical recurring entrypoint now connects collection, scoring, persistence and alert
+delivery. Reused analysis and StateStore, with the distinct callback/output responsibility
+in monitor.alerts. The archived fractional alert threshold bug is corrected. All 107 tests
+pass. A loopback HTTP test exercises the complete model protocol and watch integration,
+including invalid responses and failure receipts; it does not prove a paid provider.
+The real offline watch command created five logged alerts, then restarted without duplicate
+log entries. Complete command output, log and source-bound receipt are at
+`/var/folders/06/9jhy0p4s0f55cb7rpvchtb9r0000gn/T/situation-pipeline-smoke-qgm3ied2/receipt.json`.
+Graph code refresh: 750 nodes, 7094 edges, SHA-256 `c7cf3c821296652b10659b2bbb4472a191a58f7766bb6aa0860a55cebca69c19`.
+Document semantics remain partial. HTTP dashboard restoration and source latency accounting
+remain before final capability review and Linux migration. No deadline was specified.

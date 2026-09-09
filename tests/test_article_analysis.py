@@ -206,3 +206,58 @@ def test_fixture_analysis_and_cli_digest_are_deterministic_and_offline(
     assert main(["fetch", "--dry-run", "--digest"]) == 0
     second_cli = capsys.readouterr().out
     assert first_cli == second_cli == first_digest
+
+
+def test_model_protocol_and_watch_pipeline_over_real_http(tmp_path, capsys):
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from monitor.analysis import HTTPScorer
+    from monitor.storage import StateStore
+
+    requests = []
+    replies = [b'{"response":"{\\"score\\":80,\\"confidence_low\\":70,\\"confidence_high\\":90,\\"reason\\":\\"Relevant\\"}"}']
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            requests.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(replies[0])
+        def log_message(self, *args):
+            pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    endpoint = f'http://127.0.0.1:{server.server_port}/score'
+    try:
+        state = tmp_path / 'state.sqlite3'
+        assert main(['watch', '--state', str(state), '--cycles', '1', '--source', 'hackernews',
+                     '--model-endpoint', endpoint]) == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output['scored_count'] == 5 and output['scoring'] == 'model'
+        assert output['network_enabled'] is True
+        assert len(requests) == 5 and all(r['stream'] is False for r in requests)
+        with StateStore(state, read_only=True) as store:
+            rows = store.recent_articles(24)
+            assert len(rows) == 5 and all(row.scored.score == 80 for row in rows)
+            assert store.conn.execute("SELECT item_count, error FROM ingest_runs WHERE source='llm'").fetchone()[:] == (5, None)
+        replies[0] = b'{"score":20,"confidence_low":10,"confidence_high":30}'
+        assert HTTPScorer(endpoint)(article()).score == 20
+        replies[0] = b'{"score":80,"confidence_low":90,"confidence_high":95}'
+        before = len(requests)
+        with pytest.raises(ValueError, match='bounds'):
+            HTTPScorer(endpoint, retries=1)(article())
+        assert len(requests) == before + 2
+        failed_state = tmp_path / 'failed.sqlite3'
+        assert main(['watch', '--state', str(failed_state), '--cycles', '1', '--source', 'hackernews',
+                     '--model-endpoint', endpoint]) == 1
+        output = json.loads(capsys.readouterr().out)
+        assert output['scored_count'] == 0 and len(output['scoring_errors']) == 5
+        with StateStore(failed_state, read_only=True) as store:
+            assert len(store.recent_articles(24)) == 5
+            assert all(row.scored is None for row in store.recent_articles(24))
+            assert store.conn.execute("SELECT error FROM ingest_runs WHERE source='llm'").fetchone()[0] == '5 item(s) failed scoring'
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

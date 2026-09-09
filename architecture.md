@@ -22,10 +22,10 @@ a missing or wholly invalid input now exits unsuccessfully rather than claiming 
 | Live HN/GitHub HTTP ingestion | Restored through canonical parsers and explicit `fetch --live`; real public CLI smoke passed |
 | HTTP dashboard and JSON endpoints | Missing; prototype servers contain useful behaviour |
 | Recurring scheduler lifecycle | Restored by `watch` and the interruptible canonical `run_source_loop`; bounded two-cycle CLI verified |
-| Configuration loading | JSON and INI formats retained by `monitor.config`; watch consumes state, sources, interval and logging; alert/model fields await their integration |
-| Alert log output and callback dispatch | Missing; union retains persistent alert events only |
+| Configuration loading | JSON and INI formats retained by `monitor.config`; watch consumes state, sources, interval, logging, alert and explicit model settings |
+| Alert log output and callback dispatch | Restored by monitor.alerts and watch; persistent firing remains owned by StateStore, file delivery survives restart |
 | Upstream popularity/author metadata | Restored in canonical Article metadata, parser output and SQLite v4; legacy rows and receipts survive upgrade |
-| Optional model scoring | Missing; prototypes include HTTP/injected-provider scoring paths |
+| Optional model scoring | Restored explicit JSON/Ollama HTTP scorer and injected scorer function; bounded invalid-response retries, failure receipts and default offline heuristic |
 
 Migration is pending this capability reconciliation. An earlier bounded-union milestone
 must not be treated as proof that every prototype capability has survived. Restoring code
@@ -324,3 +324,19 @@ extend. Missing explicit configuration files now fail rather than silently creat
 SQLite database. Recurrence extends the existing scheduler and state store rather than introducing
 a second scheduler. Live registrations are named `live:<source>` and commands admit only their
 selected registrations, preventing an offline fixture tick from executing or relabelling live work.
+
+### Restored pipeline ownership
+
+`monitor.analysis` retains one scoring/clustering owner. Its explicit HTTP scorer replaces
+the archived generic HTTP implementation. Callable scorer injection replaces the v2
+provider-specific construction path, whose prompt formatting failed before the model call.
+The v2 offline heuristic remains the default. No particular hosted-provider SDK or model is
+required or automatically activated. Model bounds express supplied uncertainty, not a
+verified statistical confidence level.
+
+`monitor.alerts` is a distinct output/callback lifecycle responsibility. It calls no SQLite
+transaction internals and duplicates no persisted event owner. Callback failure remains
+retryable. File delivery uses complete event JSON lines for restart deduplication. File and
+stderr delivery are not atomic; a complete file receipt is the durable acknowledgement.
+Without a log, stderr deduplication lasts only for the current process. The historical
+0–1 configured threshold is converted to the canonical 0–100 scale before evaluation.
