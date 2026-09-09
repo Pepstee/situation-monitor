@@ -368,3 +368,28 @@ def test_legacy_database_upgrade_preserves_rows_and_round_trips_metadata(tmp_pat
     with StateStore(path, read_only=True) as store:
         assert store.recent_articles(1, now=300)[0].article == article
         assert store.conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_foreign_prototype_database_is_rejected_without_alteration(tmp_path):
+    path = tmp_path / 'v1.sqlite3'
+    with sqlite3.connect(path) as connection:
+        connection.execute('CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT)')
+        connection.execute("INSERT INTO items VALUES ('old', 'Preserve me')")
+    before = path.read_bytes()
+    store = StateStore(path)
+    try:
+        with pytest.raises(RuntimeError, match='incompatible prototype'):
+            store.init_schema()
+    finally:
+        store.close()
+    assert path.read_bytes() == before
+
+
+def test_scored_only_dedup_retains_failed_scoring_for_retry(tmp_path):
+    first = Article(url='https://example.com/a', title='A', source='rss')
+    second = Article(url='https://example.com/b', title='B', source='rss')
+    with StateStore(tmp_path / 'state.sqlite3') as store:
+        store.save_clusters(analyze_articles([first]), seen_at=100)
+        store.save_article(second, seen_at=100)
+        assert store.filter_unseen([first, second], now=200, scored_only=True) == [second]
+        assert store.filter_unseen([first, second], now=100000, scored_only=True) == [first, second]

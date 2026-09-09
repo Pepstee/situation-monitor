@@ -248,6 +248,12 @@ class StateStore:
             raise RuntimeError("read-only StateStore cannot initialize schema")
         self.open()
         version = self.conn.execute("PRAGMA user_version").fetchone()[0]
+        tables = {row[0] for row in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'") if not row[0].startswith("sqlite_")}
+        for table, required in {"articles": {"fingerprint", "tags_json", "seen_at"},
+                                "sources": {"fixture_source", "interval_s"},
+                                "source_reliability": {"last_updated", "mean_latency_ms"}}.items():
+            if tables and (table not in tables or not required <= {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}):
+                raise RuntimeError("incompatible prototype database; preserve it separately and select canonical state")
         if version > SCHEMA_VERSION:
             raise RuntimeError("database schema is newer than this application")
         columns = {row[1] for row in self.conn.execute("PRAGMA table_info(articles)")}
@@ -509,10 +515,12 @@ class StateStore:
         window_hours: float = 24.0,
         *,
         now: float | None = None,
+        scored_only: bool = False,
     ) -> list[Article]:
         """Filter persisted and same-batch duplicates without writing state."""
 
-        seen = self.recent_fingerprints(window_hours, now=now)
+        seen = ({row["fingerprint"] for row in self._recent_rows(window_hours, now=now) if row["score"] is not None}
+                if scored_only else self.recent_fingerprints(window_hours, now=now))
         surviving: list[Article] = []
         for article in articles:
             fingerprint = url_fingerprint(article.url)
@@ -609,9 +617,13 @@ class StateStore:
         *,
         articles: list[Article] | None = None,
         error: str | None = None,
+        finished_at: float | None = None,
     ) -> int:
         """Atomically persist one deterministic fixture check and its Articles."""
 
+        ended_at = checked_at if finished_at is None else finished_at
+        if ended_at < checked_at:
+            raise ValueError("source completion cannot precede its start")
         checked_articles = articles or []
         if error is not None and checked_articles:
             raise ValueError("failed source checks cannot persist articles")
@@ -622,7 +634,7 @@ class StateStore:
                 cursor,
                 source,
                 checked_at,
-                checked_at,
+                ended_at,
                 item_count=len(checked_articles),
                 error=error,
             )

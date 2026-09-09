@@ -356,3 +356,17 @@ log entries. Complete command output, log and source-bound receipt are at
 Graph code refresh: 750 nodes, 7094 edges, SHA-256 `c7cf3c821296652b10659b2bbb4472a191a58f7766bb6aa0860a55cebca69c19`.
 Document semantics remain partial. HTTP dashboard restoration and source latency accounting
 remain before final capability review and Linux migration. No deadline was specified.
+
+## Dashboard and pipeline reconciliation, 9 September 2026
+
+All 114 tests pass, covering real HTTP routes, unsafe content rendering, lifecycle, measured
+source success/failure timing, no-repeat model calls, scored digest export and unchanged
+foreign database rejection. The existing snapshot/state owners are reused. Distinct HTTP
+presentation lives in monitor.dashboard. The real serve command returned all four routes
+without modifying its database, then exited 0 on Ctrl-C. Complete HTTP output and source
+identities are preserved at
+`/var/folders/06/9jhy0p4s0f55cb7rpvchtb9r0000gn/T/situation-dashboard-smoke-ehgqn8um/receipt.json`.
+Code graph: 803 nodes, 8523 edges, SHA-256 `63e0d4858596a088192ffc7acff05c06527e0dc5f21a6c74bf597018665eae9d`. Document semantics
+remain partial. Final copy review identified v2 near-duplicate suppression and generic
+source/check definition persistence as remaining work. Migration is still pending those
+capabilities; no whole-project no-loss claim is made. No deadline was specified.

@@ -37,6 +37,7 @@ def run_due_source_checks(
     *,
     checked_at: float,
     source_names: Iterable[str] | None = None,
+    elapsed_clock: Callable[[], float] | None = None,
 ) -> list[SourceCheckResult]:
     """Collect every due source once, recording failures without stopping the tick."""
 
@@ -46,6 +47,7 @@ def run_due_source_checks(
         source = due.source
         if admitted is not None and source.name not in admitted:
             continue
+        started = elapsed_clock() if elapsed_clock else 0
         try:
             articles = collect(source.fixture_source)
             if not isinstance(articles, list) or not all(
@@ -58,6 +60,7 @@ def run_due_source_checks(
                 source.name,
                 checked_at,
                 error=error,
+                finished_at=checked_at + max(0, elapsed_clock() - started) if elapsed_clock else None,
             )
             item_count = 0
         else:
@@ -66,6 +69,7 @@ def run_due_source_checks(
                 source.name,
                 checked_at,
                 articles=articles,
+                finished_at=checked_at + max(0, elapsed_clock() - started) if elapsed_clock else None,
             )
             item_count = len(articles)
         results.append(
@@ -86,6 +90,7 @@ def run_source_loop(
     max_cycles: int | None = None, stop_event: threading.Event | None = None,
     clock: Callable[[], float] = time.time,
     source_names: Iterable[str] | None = None,
+    elapsed_clock: Callable[[], float] | None = None,
 ):
     """Repeat the canonical due-source operation with bounded or interruptible lifetime."""
     if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
@@ -98,7 +103,7 @@ def run_source_loop(
     while not stop.is_set():
         checked_at = clock()
         yield checked_at, run_due_source_checks(
-            store, collect, checked_at=checked_at, source_names=admitted,
+            store, collect, checked_at=checked_at, source_names=admitted, elapsed_clock=elapsed_clock,
         )
         cycles += 1
         if max_cycles is not None and cycles >= max_cycles:

@@ -346,3 +346,24 @@ def test_watch_scores_and_delivers_alerts_with_fractional_legacy_threshold(tmp_p
     output = json.loads(capsys.readouterr().out)
     assert output['created_alerts'] == 0 and output['delivery_errors'] == []
     assert log.read_text().splitlines() == lines
+
+
+def test_measured_source_latency_is_preserved_for_success_and_failure(tmp_path):
+    from monitor.scheduler import run_due_source_checks
+    from monitor.storage import StateStore
+    times = iter([10.0, 10.25, 11.0, 11.75])
+    def collect(source):
+        if source == 'rss':
+            raise OSError('observed source failure')
+        return []
+    with StateStore(tmp_path / 'state.sqlite3') as store:
+        store.register_source('a', 'hackernews', 30)
+        store.register_source('b', 'rss', 30)
+        results = run_due_source_checks(store, collect, checked_at=100, elapsed_clock=lambda: next(times))
+        assert [r.status for r in results] == ['succeeded', 'failed']
+        stats = {r.source: r for r in store.all_reliability()}
+        assert stats['a'].mean_latency_ms == 250
+        assert stats['b'].mean_latency_ms == 750
+        assert stats['b'].hit_rate == 0
+        assert store.due_sources(now=130) == []
+        assert [s.source.name for s in store.due_sources(now=130.5)] == ['a']

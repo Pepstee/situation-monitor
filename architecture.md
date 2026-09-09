@@ -20,11 +20,13 @@ a missing or wholly invalid input now exits unsuccessfully rather than claiming 
 | Scoring, deduplication and clustering | Deterministic path retained |
 | SQLite state, source scheduling, alert lifecycle and dashboard JSON | Retained and tested |
 | Live HN/GitHub HTTP ingestion | Restored through canonical parsers and explicit `fetch --live`; real public CLI smoke passed |
-| HTTP dashboard and JSON endpoints | Missing; prototype servers contain useful behaviour |
+| HTTP dashboard and JSON endpoints | Restored loopback server, escaped HTML and four read-only routes, sharing canonical snapshot queries |
 | Recurring scheduler lifecycle | Restored by `watch` and the interruptible canonical `run_source_loop`; bounded two-cycle CLI verified |
 | Configuration loading | JSON and INI formats retained by `monitor.config`; watch consumes state, sources, interval, logging, alert and explicit model settings |
 | Alert log output and callback dispatch | Restored by monitor.alerts and watch; persistent firing remains owned by StateStore, file delivery survives restart |
-| Upstream popularity/author metadata | Restored in canonical Article metadata, parser output and SQLite v4; legacy rows and receipts survive upgrade |
+| Upstream popularity/author metadata | Restored in canonical Article metadata, parser output and SQLite v4; canonical schema-3 rows and receipts survive upgrade |
+| Near-duplicate digest suppression | Pending v2 presentation behaviour; source records must remain intact |
+| Generic source/check definitions | Pending v2 implemented registry/CRUD; execution of those checks was not implemented in the prototype |
 | Optional model scoring | Restored explicit JSON/Ollama HTTP scorer and injected scorer function; bounded invalid-response retries, failure receipts and default offline heuristic |
 
 Migration is pending this capability reconciliation. An earlier bounded-union milestone
@@ -340,3 +342,18 @@ retryable. File delivery uses complete event JSON lines for restart deduplicatio
 stderr delivery are not atomic; a complete file receipt is the durable acknowledgement.
 Without a log, stderr deduplication lasts only for the current process. The historical
 0–1 configured threshold is converted to the canonical 0–100 scale before evaluation.
+
+### Dashboard, timing and pipeline completion checks
+
+`monitor.dashboard` replaces the two archived HTTP servers while reusing CLI snapshot
+queries. It owns rendering and listener lifecycle only. The server binds loopback because
+it has no authentication. HTML escapes untrusted text and only creates HTTP(S) links.
+`/data` exposes the full snapshot, `/api/items` its articles, and `/api/reliability` all
+source and model run statistics. Source checks measure elapsed time in watch; deterministic
+tick keeps its supplied timestamp semantics.
+
+Watch filters recently scored URLs before storage and scoring, preserving their analysis
+and avoiding repeated model calls within 24 hours. Unscored failures remain eligible for
+retry. `--digest-output` writes the current batch's actual scored Markdown digest. Foreign
+v1/v2 database layouts are rejected before schema writes and must be preserved separately.
+This is not an importer for prototype runtime data.

@@ -241,6 +241,17 @@ def test_model_protocol_and_watch_pipeline_over_real_http(tmp_path, capsys):
             rows = store.recent_articles(24)
             assert len(rows) == 5 and all(row.scored.score == 80 for row in rows)
             assert store.conn.execute("SELECT item_count, error FROM ingest_runs WHERE source='llm'").fetchone()[:] == (5, None)
+        with StateStore(state) as store:
+            store.conn.execute("UPDATE ingest_runs SET finished_at=0 WHERE source='hackernews'")
+            store.conn.commit()
+        digest_path = tmp_path / 'digest.md'
+        assert main(['watch', '--state', str(state), '--cycles', '1', '--source', 'hackernews',
+                     '--model-endpoint', endpoint, '--digest-output', str(digest_path)]) == 0
+        output = json.loads(capsys.readouterr().out)
+        assert output['scored_count'] == 0 and len(requests) == 5
+        assert digest_path.read_text() == '# Situation Monitor Digest\n'
+        with StateStore(state, read_only=True) as store:
+            assert all(row.scored.score == 80 for row in store.recent_articles(24))
         replies[0] = b'{"score":20,"confidence_low":10,"confidence_high":30}'
         assert HTTPScorer(endpoint)(article()).score == 20
         replies[0] = b'{"score":80,"confidence_low":90,"confidence_high":95}'

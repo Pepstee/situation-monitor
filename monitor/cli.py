@@ -14,7 +14,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from monitor.analysis import analyze_articles, build_digest, HTTPScorer, score_article, cluster_scored_articles
+from monitor.analysis import analyze_articles, build_digest, HTTPScorer, score_article, cluster_scored_articles, generate_digest
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.ingest import fetch_live_articles
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--fixture-dir", default=str(DEFAULT_FIXTURES))
     watch_parser.add_argument("--rss-url", action="append", default=[])
     watch_parser.add_argument("--model-endpoint", help="explicit JSON/Ollama scoring URL")
+    watch_parser.add_argument("--digest-output", help="write scored Markdown digest to this file")
     watch_parser.add_argument("--alert-log", help="append delivered alert events as JSON lines")
     watch_parser.add_argument("--alert-threshold", type=int, help="inclusive score threshold from 0 to 100")
 
@@ -144,6 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=20,
         help="positive maximum rows shown per collection (default: 20)",
     )
+
+    serve_parser = subcommands.add_parser("serve", help="serve the read-only local dashboard")
+    serve_parser.add_argument("--state", required=True)
+    serve_parser.add_argument("--port", type=int, default=8080)
+    serve_parser.add_argument("--window-hours", type=float, default=24.0)
+    serve_parser.add_argument("--limit", type=int, default=100)
 
     alerts_parser = subcommands.add_parser(
         "alerts", help="evaluate and inspect local persisted threshold alerts"
@@ -335,7 +342,7 @@ def _run_watch(arguments) -> int:
     collected = []
     source_collect = collect
     def collect(source):
-        articles = source_collect(source)
+        articles = store.filter_unseen(source_collect(source), scored_only=True)
         collected.extend(articles)
         return articles
     failed = False
@@ -345,7 +352,7 @@ def _run_watch(arguments) -> int:
         try:
             for checked_at, results in run_source_loop(
                 store, collect, poll_interval_s=interval,
-                max_cycles=arguments.cycles, source_names=names,
+                max_cycles=arguments.cycles, source_names=names, elapsed_clock=time.monotonic,
             ):
                 failed = failed or any(result.error is not None for result in results)
                 scored, scoring_errors = [], []
@@ -355,8 +362,11 @@ def _run_watch(arguments) -> int:
                         scored.append(scorer(article))
                     except (OSError, ValueError) as exc:
                         scoring_errors.append({"url": article.url, "error": str(exc)})
+                clusters = cluster_scored_articles(scored)
                 if scored:
-                    store.save_clusters(cluster_scored_articles(scored), seen_at=checked_at)
+                    store.save_clusters(clusters, seen_at=checked_at)
+                if arguments.digest_output:
+                    Path(arguments.digest_output).write_text(generate_digest(clusters), encoding="utf-8")
                 if model_endpoint and collected:
                     store.record_run("llm", started, time.time(), item_count=len(scored),
                         error=f"{len(scoring_errors)} item(s) failed scoring" if scoring_errors else None)
@@ -452,14 +462,14 @@ def _run_alert_resolution(state_path: str, alert_id: int) -> int:
     return 0 if resolved else 1
 
 
-def _run_dashboard(
+def dashboard_snapshot(
     state_path: str,
     *,
     snapshot_at: float,
     window_hours: float,
     limit: int,
-) -> int:
-    """Render one transactionally closed, read-only JSON state snapshot."""
+) -> dict[str, object]:
+    """Read one transactionally closed snapshot shared by CLI and HTTP."""
 
     with StateStore(state_path, read_only=True) as store:
         store.conn.execute("BEGIN")
@@ -497,6 +507,7 @@ def _run_dashboard(
                 "enabled": source.enabled,
                 "fixture_source": source.fixture_source,
                 "hit_rate": None if stats is None else stats.hit_rate,
+                "mean_latency_ms": None if stats is None else stats.mean_latency_ms,
                 "interval_seconds": source.interval_s,
                 "last_finished_at": None if last_run is None else last_run.finished_at,
                 "last_run_id": None if last_run is None else last_run.run_id,
@@ -525,6 +536,9 @@ def _run_dashboard(
             "total_count": len(articles),
             "window_hours": window_hours,
         },
+        "reliability": [{"source": stats.source, "run_count": stats.run_count,
+            "success_count": stats.success_count, "hit_rate": stats.hit_rate,
+            "mean_latency_ms": stats.mean_latency_ms} for stats in reliability.values()],
         "generated_at": snapshot_at,
         "limit": limit,
         "mode": "local-dashboard-snapshot",
@@ -544,6 +558,11 @@ def _run_dashboard(
             "total_count": len(source_records),
         },
     }
+    return output
+
+
+def _run_dashboard(state_path: str, *, snapshot_at: float, window_hours: float, limit: int) -> int:
+    output = dashboard_snapshot(state_path, snapshot_at=snapshot_at, window_hours=window_hours, limit=limit)
     print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
@@ -557,6 +576,24 @@ def main(argv: list[str] | None = None) -> int:
         return _run_summary(str(DEFAULT_EVENTS))
     if arguments.command == "summary":
         return _run_summary(arguments.input)
+    if arguments.command == "serve":
+        if not 0 <= arguments.port <= 65535 or arguments.limit <= 0 or not math.isfinite(arguments.window_hours) or arguments.window_hours < 0:
+            parser.error("invalid dashboard port, limit or window")
+        from monitor.dashboard import DashboardServer
+        def snapshot():
+            return dashboard_snapshot(arguments.state, snapshot_at=time.time(),
+                window_hours=arguments.window_hours, limit=arguments.limit)
+        snapshot()  # Validate the selected state before opening the listener.
+        server = DashboardServer(snapshot, port=arguments.port)
+        try:
+            server.start()
+            print(server.url, flush=True)
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            return 0
+        finally:
+            server.stop()
     if arguments.command == "watch":
         try:
             return _run_watch(arguments)

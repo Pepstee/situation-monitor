@@ -313,6 +313,7 @@ def test_dashboard_is_deterministic_read_only_and_covers_local_lifecycle(
             "enabled": True,
             "fixture_source": "rss",
             "hit_rate": 1.0,
+            "mean_latency_ms": 0.0,
             "interval_seconds": 60,
             "last_finished_at": 1000.0,
             "last_run_id": 1,

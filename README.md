@@ -105,7 +105,7 @@ receipt; `--cycles` provides a bounded run. JSON configuration accepts the archi
 `interval`, `sources`, `alert_threshold`, `alert_log` and `llm_endpoint` fields. INI configuration
 accepts `[database] path` and `[monitor] poll_interval_s` / `log_level`. CLI state and interval
 options override configuration. Missing configuration files fail, and no database path is implicit.
-Alert/model configuration is retained but is not activated by this source-check command yet.
+Watch consumes alert configuration and uses a model endpoint only when explicitly configured.
 
 ### Local alert events
 
@@ -204,3 +204,18 @@ fails visibly and is not overwritten. Without a log, stderr alerts may repeat on
 Programmatic `AlertRule` and `AlertManager` in `monitor.alerts` restore independent callback
 rules, reset and batch evaluation. Their deduplication is process-local. Persisted alert
 firing and resolution continue to belong to `StateStore`.
+
+### Local dashboard and digest export
+
+Run `python3 -m monitor serve --state PATH` to view the existing database at
+`http://127.0.0.1:8080`. Select another port with `--port`. Ctrl-C stops the listener.
+The page refreshes every 30 seconds and never fetches source articles itself. It shows
+articles, scores and source/model reliability. JSON is available at `/data`, `/api/items`
+and `/api/reliability`. Use an SSH tunnel to access the loopback dashboard from another
+machine.
+
+Watch measures source latency, skips URLs successfully scored within 24 hours, and retries
+unscored items. `--digest-output PATH` writes the current batch's scored Markdown digest.
+An empty batch writes an empty digest. Older prototype databases have different layouts and
+are rejected without conversion; preserve them separately. Only earlier canonical Article
+databases are upgraded automatically.
