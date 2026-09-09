@@ -6,7 +6,10 @@ The active implementation is the `monitor` package on
 
 Compared sources: the original Mac `situation-monitor`, the OX union branch, and the
 archived agentic-orchestrator `situation-monitor`, `situation-monitor-v2`, and empty
-`situation-monitor-v3` directories. The original Event schema tests are retained.
+`situation-monitor-v3` directories. The original Event schema tests are retained. The additional claude-orchestrator-main
+`situation_monitor_run` directory contains historical task specifications targeting the
+original copy, with no additional executable implementation. Its requested historical
+validation report is missing evidence, not a missing product feature.
 The canonical default event fixture has been restored from the original Mac copy;
 a missing or wholly invalid input now exits unsuccessfully rather than claiming success.
 
@@ -21,7 +24,7 @@ a missing or wholly invalid input now exits unsuccessfully rather than claiming 
 | Recurring scheduler lifecycle | Restored by `watch` and the interruptible canonical `run_source_loop`; bounded two-cycle CLI verified |
 | Configuration loading | JSON and INI formats retained by `monitor.config`; watch consumes state, sources, interval and logging; alert/model fields await their integration |
 | Alert log output and callback dispatch | Missing; union retains persistent alert events only |
-| Upstream popularity/author metadata | Still needs reconciliation with prototype raw-score and source metadata fields |
+| Upstream popularity/author metadata | Restored in canonical Article metadata, parser output and SQLite v4; legacy rows and receipts survive upgrade |
 | Optional model scoring | Missing; prototypes include HTTP/injected-provider scoring paths |
 
 Migration is pending this capability reconciliation. An earlier bounded-union milestone

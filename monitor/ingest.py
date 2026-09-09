@@ -91,6 +91,12 @@ class HNFetcher:
                     published_at=published_at,
                     reliability=SourceReliability.MEDIUM,
                     tags=["hackernews"],
+                    metadata={
+                        "source_id": str(hit["objectID"]) if hit.get("objectID") is not None else None,
+                        "raw_score": hit.get("points"),
+                        "author": hit.get("author"),
+                        "num_comments": hit.get("num_comments"),
+                    },
                 )
             )
         return articles
@@ -106,6 +112,8 @@ class _TrendingParser(HTMLParser):
         self._link_text: list[str] = []
         self._in_description = False
         self._description: list[str] = []
+        self._metadata_key: str | None = None
+        self._metadata_text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
@@ -120,11 +128,21 @@ class _TrendingParser(HTMLParser):
                 self._current["href"] = href
                 self._in_link = True
                 self._link_text = []
+        elif self._current is not None and (
+            (tag == "a" and (attributes.get("href") or "").endswith("/stargazers"))
+            or (tag == "span" and attributes.get("itemprop") == "programmingLanguage")
+        ):
+            self._metadata_key = "stars" if tag == "a" else "language"
+            self._metadata_text = []
         elif tag == "p" and self._current is not None and "color-fg-muted" in classes:
             self._in_description = True
             self._description = []
 
     def handle_endtag(self, tag: str) -> None:
+        if self._metadata_key and tag == ("a" if self._metadata_key == "stars" else "span"):
+            if self._current is not None:
+                self._current[self._metadata_key] = "".join(self._metadata_text).strip()
+            self._metadata_key = None
         if tag == "article":
             if self._current and self._current["href"]:
                 self.repositories.append(self._current)
@@ -132,6 +150,7 @@ class _TrendingParser(HTMLParser):
             self._in_heading = False
             self._in_link = False
             self._in_description = False
+            self._metadata_key = None
         elif tag == "h2":
             self._in_heading = False
         elif tag == "a" and self._in_link:
@@ -147,10 +166,20 @@ class _TrendingParser(HTMLParser):
         text = data.strip()
         if not text:
             return
-        if self._in_link:
+        if self._metadata_key:
+            self._metadata_text.append(text)
+        elif self._in_link:
             self._link_text.append(text)
         elif self._in_description:
             self._description.append(text)
+
+
+def _popularity_count(text: str) -> int | None:
+    value = text.strip().lower().replace(",", "")
+    if not re.fullmatch(r"\d+(?:\.\d+)?[km]?", value):
+        return None
+    multiplier = 1000 if value.endswith("k") else 1_000_000 if value.endswith("m") else 1
+    return int(float(value.rstrip("km")) * multiplier)
 
 
 class GitHubTrendingFetcher:
@@ -173,6 +202,11 @@ class GitHubTrendingFetcher:
                     body=repository["description"],
                     reliability=SourceReliability.HIGH,
                     tags=["github", "trending"],
+                    metadata={
+                        "source_id": repository["href"].lstrip("/"),
+                        "raw_score": _popularity_count(repository.get("stars", "")),
+                        "language": repository.get("language"),
+                    },
                 )
             )
         return articles
@@ -284,6 +318,7 @@ def article_record(article: Article) -> dict[str, object]:
     """Return a deterministic, JSON-safe inspection record."""
 
     return {
+        "metadata": dict(article.metadata),
         "body": article.body,
         "published_at": article.published_at.isoformat()
         if article.published_at

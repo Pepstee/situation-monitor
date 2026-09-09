@@ -238,6 +238,7 @@ def _alert_record(event: AlertEvent) -> dict[str, object]:
 def _dashboard_article_record(item: StoredArticle) -> dict[str, object]:
     scored = item.scored
     return {
+        "metadata": dict(item.article.metadata),
         "cluster_id": item.cluster_id,
         "confidence_high": None if scored is None else scored.confidence_high,
         "confidence_low": None if scored is None else scored.confidence_low,

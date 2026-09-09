@@ -29,6 +29,7 @@ class Article:
     published_at: Optional[datetime] = None
     reliability: SourceReliability = SourceReliability.UNKNOWN
     tags: list[str] = field(default_factory=list)
+    metadata: dict[str, str | int | float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for field_name in ("url", "title", "source"):

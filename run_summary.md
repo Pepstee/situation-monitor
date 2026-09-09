@@ -327,3 +327,18 @@ SQLite integrity checking. Its command, source identities, output hash and termi
 are preserved in `/var/folders/06/9jhy0p4s0f55cb7rpvchtb9r0000gn/T/situation-watch-smoke-ng04fhwc/receipt.json`.
 The source graph was refreshed without model calls (646 nodes, 4581 edges). Historical
 document semantics remain partial. This verifies recurring checks, not full reconciliation.
+
+## Metadata reconciliation, 9 September 2026
+
+Reused Article, existing ingestion parsers, StateStore and CLI output. No parallel data
+model or database owner was introduced. HN and GitHub upstream metadata now survives
+analysis, storage and reopening. All 99 tests pass, including populated schema-3 upgrade,
+read-only legacy inspection, preserved run receipts and SQLite integrity. Existing fetch
+fields and digest output retain their earlier byte-level checks; metadata is additive.
+The real fixture fetch entrypoint returned 15 articles with networking disabled. Its
+output and source-bound receipt are at
+`/var/folders/06/9jhy0p4s0f55cb7rpvchtb9r0000gn/T/situation-metadata-smoke-junsd8ns/receipt.json`.
+Code graph: 685 nodes, 5753 edges, SHA-256 `88a6a1f3eadb68a7b2c1b53174aba64fe45c1b43342df397cfc5398484c1b9b8`.
+Document semantics remain historical/partial. No operator deadline was specified.
+Remaining critical work is alert delivery, optional model scoring and the HTTP dashboard,
+then Linux verification and migration. This project is not yet migration-complete.

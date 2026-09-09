@@ -194,3 +194,27 @@ def test_invalid_live_rss_is_rejected_before_network(monkeypatch):
     monkeypatch.setattr(HTTPClient, "get", forbidden)
     with pytest.raises(ValueError, match="rss-url"):
         fetch_live_articles(["rss"])
+
+
+def test_upstream_metadata_survives_parsers_analysis_and_storage(tmp_path):
+    import json
+    from monitor.analysis import analyze_articles
+    from monitor.storage import StateStore
+    from monitor.ingest import article_record
+
+    hn = tmp_path / "hn.json"
+    hn.write_text(json.dumps({"hits": [{"title": "Breaking research", "objectID": "123",
+        "points": 42, "author": "public-author", "num_comments": 7}]}))
+    github = tmp_path / "github.html"
+    github.write_text('<article class="Box-row"><h2><a href="/owner/repo">owner / repo</a></h2>'
+        '<p class="color-fg-muted">Description</p><span itemprop="programmingLanguage">Python</span>'
+        '<a href="/owner/repo/stargazers"><svg></svg>1.2k</a></article>')
+    articles = HNFetcher(FixtureClient(hn)).fetch() + GitHubTrendingFetcher(FixtureClient(github)).fetch()
+    assert articles[0].metadata == {"source_id": "123", "raw_score": 42,
+                                    "author": "public-author", "num_comments": 7}
+    assert articles[1].metadata == {"source_id": "owner/repo", "raw_score": 1200, "language": "Python"}
+    with StateStore(tmp_path / "state.sqlite3") as store:
+        store.save_clusters(analyze_articles(articles), seen_at=100)
+    with StateStore(tmp_path / "state.sqlite3", read_only=True) as store:
+        records = {item.article.url: article_record(item.article) for item in store.recent_articles(1, now=200)}
+    assert all(records[a.url]["metadata"] == a.metadata for a in articles)

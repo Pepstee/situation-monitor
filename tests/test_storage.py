@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -305,9 +306,13 @@ def test_alert_rule_and_event_inputs_fail_closed_without_rows(tmp_path):
         assert store.list_alert_events() == []
 
 
-def test_existing_fetch_and_digest_outputs_remain_byte_exact(capsys):
+def test_existing_fetch_fields_and_digest_remain_byte_exact(capsys):
     assert main(["fetch", "--dry-run"]) == 0
-    fetch_output = capsys.readouterr().out.encode()
+    output = json.loads(capsys.readouterr().out)
+    # Metadata is additive; all previously published fields retain their exact output.
+    for article in output["articles"]:
+        assert isinstance(article.pop("metadata"), dict)
+    fetch_output = (json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
     assert hashlib.sha256(fetch_output).hexdigest() == (
         "56e638279c60375416fc253c787dfec40ede1f96294de779ce18447451668029"
     )
@@ -339,3 +344,27 @@ def test_schema_contains_no_external_effect_configuration(tmp_path):
             "sms",
         )
     )
+
+
+def test_legacy_database_upgrade_preserves_rows_and_round_trips_metadata(tmp_path):
+    path = tmp_path / "legacy.sqlite3"
+    article = Article(url="https://example.com/old", title="Old", source="rss")
+    with StateStore(path) as store:
+        store.save_article(article, seen_at=100)
+        store.record_run("rss", 90, 100, item_count=1)
+        store.conn.execute("ALTER TABLE articles DROP COLUMN metadata_json")
+        store.conn.execute("PRAGMA user_version = 3")
+        store.conn.commit()
+    original_bytes = path.read_bytes()
+    with StateStore(path, read_only=True) as store:
+        assert store.recent_articles(1, now=200)[0].article == article
+    assert path.read_bytes() == original_bytes
+    article.metadata = {"source_id": "old", "raw_score": 1200, "author": "example", "num_comments": 4}
+    with StateStore(path) as store:
+        assert store.conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert store.conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
+        assert store.recent_articles(1, now=200)[0].article.metadata == {}
+        store.save_article(article, seen_at=200)
+    with StateStore(path, read_only=True) as store:
+        assert store.recent_articles(1, now=300)[0].article == article
+        assert store.conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

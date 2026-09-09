@@ -177,3 +177,12 @@ See [execution_order.md](execution_order.md) for the full 8-task build plan.
 ## License
 
 MIT (or specify as needed)
+
+### Source metadata
+
+Article JSON includes `metadata`: HN source ID, points (`raw_score`), author and comment
+count, or GitHub repository ID, stars (`raw_score`) and language. Unavailable values remain
+null. Popularity is source data, not the monitor's urgency score. SQLite schema 4 retains
+these values through analysis and restart. Opening an older database for writing upgrades
+it in place while preserving existing articles and run receipts. Read-only snapshots of
+schema 3 remain supported without altering the original database.

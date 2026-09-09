@@ -21,7 +21,7 @@ from monitor.analysis import (
 from schemas import Article, SourceReliability
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _DDL = f"""
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS articles (
     published_at     TEXT,
     reliability      TEXT NOT NULL,
     tags_json        TEXT NOT NULL DEFAULT '[]',
+    metadata_json    TEXT NOT NULL DEFAULT '{{}}',
     score            INTEGER,
     confidence_low   INTEGER,
     confidence_high  INTEGER,
@@ -246,6 +247,13 @@ class StateStore:
         if self._read_only:
             raise RuntimeError("read-only StateStore cannot initialize schema")
         self.open()
+        version = self.conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise RuntimeError("database schema is newer than this application")
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(articles)")}
+        if columns and "metadata_json" not in columns:
+            with self.conn:
+                self.conn.execute("ALTER TABLE articles ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
         self.conn.executescript(_DDL)
         self.conn.commit()
 
@@ -431,8 +439,8 @@ class StateStore:
             INSERT INTO articles (
                 fingerprint, url, title, source, body, published_at, reliability,
                 tags_json, score, confidence_low, confidence_high, signals_json,
-                cluster_id, digest_rank, seen_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cluster_id, digest_rank, seen_at, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(fingerprint) DO UPDATE SET
                 url = excluded.url,
                 title = excluded.title,
@@ -441,6 +449,7 @@ class StateStore:
                 published_at = excluded.published_at,
                 reliability = excluded.reliability,
                 tags_json = excluded.tags_json,
+                metadata_json = excluded.metadata_json,
                 score = excluded.score,
                 confidence_low = excluded.confidence_low,
                 confidence_high = excluded.confidence_high,
@@ -469,6 +478,7 @@ class StateStore:
                 cluster_id,
                 digest_rank,
                 seen_at,
+                json.dumps(article.metadata, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
             ),
         )
 
@@ -543,6 +553,7 @@ class StateStore:
             published_at=published_at,
             reliability=SourceReliability(row["reliability"]),
             tags=json.loads(row["tags_json"]),
+            metadata=json.loads(row["metadata_json"]) if "metadata_json" in row.keys() else {},
         )
         scored = None
         if row["score"] is not None:
