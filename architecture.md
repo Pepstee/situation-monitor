@@ -16,11 +16,12 @@ a missing or wholly invalid input now exits unsuccessfully rather than claiming 
 | HN, GitHub and RSS parsing | Retained with fixture/injected byte clients |
 | Scoring, deduplication and clustering | Deterministic path retained |
 | SQLite state, source scheduling, alert lifecycle and dashboard JSON | Retained and tested |
-| Live HN/GitHub HTTP ingestion | Missing from the union CLI; implemented in archived prototypes |
+| Live HN/GitHub HTTP ingestion | Restored through canonical parsers and explicit `fetch --live`; real public CLI smoke passed |
 | HTTP dashboard and JSON endpoints | Missing; prototype servers contain useful behaviour |
 | Recurring scheduler lifecycle | Missing; union currently provides a one-shot tick |
 | Configuration loading | Missing; prototypes have usable configuration loaders |
 | Alert log output and callback dispatch | Missing; union retains persistent alert events only |
+| Upstream popularity/author metadata | Still needs reconciliation with prototype raw-score and source metadata fields |
 | Optional model scoring | Missing; prototypes include HTTP/injected-provider scoring paths |
 
 Migration is pending this capability reconciliation. An earlier bounded-union milestone

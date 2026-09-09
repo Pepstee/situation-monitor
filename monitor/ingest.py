@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from datetime import datetime
@@ -16,9 +18,30 @@ from schemas import Article, Event, SourceReliability
 
 
 class BytesClient(Protocol):
-    """Minimal injected byte source; this increment deliberately has no network client."""
+    """Minimal injected byte source shared by fixture and live ingestion."""
 
     def get(self, source: str) -> bytes: ...
+
+
+class HTTPClient:
+    """Bounded stdlib transport retained from the archived live ingesters."""
+
+    def __init__(self, timeout: float = 15, max_bytes: int = 4_000_000) -> None:
+        if timeout <= 0 or max_bytes <= 0:
+            raise ValueError("HTTP limits must be positive")
+        self.timeout = timeout
+        self.max_bytes = max_bytes
+
+    def get(self, source: str) -> bytes:
+        parsed = urllib.parse.urlsplit(source)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("source must be an HTTP(S) URL without embedded credentials")
+        request = urllib.request.Request(source, headers={"User-Agent": "situation-monitor/1.0"})
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            data = response.read(self.max_bytes + 1)
+        if len(data) > self.max_bytes:
+            raise ValueError("source exceeds the response byte limit")
+        return data
 
 
 class FixtureClient:
@@ -222,6 +245,39 @@ def fetch_fixture_articles(
             article.url,
         ),
     )
+
+
+def fetch_live_articles(
+    sources: Iterable[str], *, client: BytesClient | None = None,
+    hn_limit: int = 30, github_language: str = "", github_since: str = "daily",
+    rss_urls: Iterable[str] = (),
+) -> list[Article]:
+    """Use the canonical parsers against explicitly selected live sources."""
+    selected = set(sources)
+    if selected - {"hackernews", "github_trending", "rss"}:
+        raise ValueError("unknown live source")
+    if not 1 <= hn_limit <= 1000 or github_since not in {"daily", "weekly", "monthly"}:
+        raise ValueError("invalid live source selection")
+    rss_urls = tuple(rss_urls)
+    if "rss" in selected and not rss_urls:
+        raise ValueError("live RSS requires at least one --rss-url")
+    transport = client if client is not None else HTTPClient()
+    articles: list[Article] = []
+    if "hackernews" in selected:
+        url = "https://hn.algolia.com/api/v1/search?" + urllib.parse.urlencode(
+            {"tags": "front_page", "hitsPerPage": hn_limit}
+        )
+        articles.extend(HNFetcher(transport).fetch(url))
+    if "github_trending" in selected:
+        url = "https://github.com/trending"
+        if github_language:
+            url += "/" + urllib.parse.quote(github_language, safe="")
+        url += "?" + urllib.parse.urlencode({"since": github_since})
+        articles.extend(GitHubTrendingFetcher(transport).fetch(url))
+    if "rss" in selected:
+        for url in rss_urls:
+            articles.extend(RSSFetcher(transport).fetch(url))
+    return sorted(articles, key=lambda item: (item.source.casefold(), item.title.casefold(), item.url))
 
 
 def article_record(article: Article) -> dict[str, object]:

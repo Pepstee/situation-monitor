@@ -14,6 +14,7 @@ if __package__ in {None, ""}:
 
 from monitor.analysis import analyze_articles, build_digest
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
+from monitor.ingest import fetch_live_articles
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
 from monitor.storage import AlertEvent, RunRecord, StateStore, StoredArticle
 from monitor.summarize import summarize
@@ -36,13 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
     summary_parser.add_argument("input", nargs="?", default=str(DEFAULT_EVENTS))
 
     fetch_parser = subcommands.add_parser(
-        "fetch", help="inspect fixture-backed source parsing without network access"
+        "fetch", help="fetch explicitly selected live sources or inspect local fixtures"
     )
-    fetch_parser.add_argument(
+    fetch_mode = fetch_parser.add_mutually_exclusive_group()
+    fetch_mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="required safety flag; only local fixture bytes are read",
+        help="read only local fixture bytes",
     )
+    fetch_mode.add_argument("--live", action="store_true", help="explicitly enable source HTTP requests")
+    fetch_parser.add_argument("--limit", type=int, default=30, help="HN story limit (1–1000)")
+    fetch_parser.add_argument("--language", default="", help="GitHub Trending language filter")
+    fetch_parser.add_argument("--since", choices=("daily", "weekly", "monthly"), default="daily")
+    fetch_parser.add_argument("--rss-url", action="append", default=[], help="RSS URL, used with --source rss")
     fetch_parser.add_argument(
         "--fixture-dir",
         default=str(DEFAULT_FIXTURES),
@@ -169,6 +176,10 @@ def _run_fixture_fetch(
     digest: bool = False,
 ) -> int:
     articles = fetch_fixture_articles(fixture_dir, sources or SOURCE_CHOICES)
+    return _emit_fetch(articles, digest=digest, live=False)
+
+
+def _emit_fetch(articles, *, digest: bool, live: bool) -> int:
     if digest:
         print(build_digest(articles), end="")
         return 0
@@ -176,8 +187,8 @@ def _run_fixture_fetch(
     result = {
         "articles": [article_record(article) for article in articles],
         "count": len(articles),
-        "mode": "fixture-dry-run",
-        "network_attempted": False,
+        "mode": "live-fetch" if live else "fixture-dry-run",
+        "network_attempted": live,
         "source_counts": dict(sorted(source_counts.items())),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
@@ -447,9 +458,20 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.command == "summary":
         return _run_summary(arguments.input)
     if arguments.command == "fetch":
+        if arguments.live:
+            try:
+                articles = fetch_live_articles(
+                    arguments.sources or ("hackernews", "github_trending"),
+                    hn_limit=arguments.limit, github_language=arguments.language,
+                    github_since=arguments.since, rss_urls=arguments.rss_url,
+                )
+            except (OSError, ValueError) as exc:
+                print(f"Live fetch failed: {exc}", file=sys.stderr)
+                return 1
+            return _emit_fetch(articles, digest=arguments.digest, live=True)
         if not arguments.dry_run:
             parser.error(
-                "fetch currently requires --dry-run; live network ingestion is deferred"
+                "fetch requires --dry-run or --live"
             )
         return _run_fixture_fetch(
             arguments.fixture_dir,

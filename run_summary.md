@@ -297,3 +297,18 @@ The Situation Monitor project is **complete and ready for use**. All planned tas
 - ✅ Professional documentation
 
 **Next Phase:** Ready to proceed with Task 5 (Event Aggregator) to add sophisticated grouping and filtering capabilities.
+
+
+## Live-ingestion reconciliation, 9 September 2026
+
+Canonical `monitor.ingest.HTTPClient` replaces duplicate prototype transports while preserving
+HN result limits and GitHub language/time-window selection. Existing parser and digest owners
+are reused. All 93 tests pass, including actual loopback HTTP transport and response-size rejection.
+The real `python3 -m monitor fetch --live` entrypoint returned 3 HN articles and 18 Python Trending
+repositories. Normalised outputs were preserved at `/tmp/situation-monitor-live-hn-20260909.json`
+and `/tmp/situation-monitor-live-github-20260909.json`, with SHA-256 values
+`ac7ca8b43cb8e0f23d982535fc31babd069cbbefa31dc21a8ebb4a68bb5e21c6` and
+`142327da84f5b0919cae4f87a31d9ef3029e3f94b5d0cbca765ca568c42e8fde` respectively.
+Raw HTTP bodies/headers were not archived for those smoke attempts. This is entrypoint proof,
+not a complete canary archive or whole-project migration acceptance. Remaining gaps are tracked
+in the reconciliation table in `architecture.md`.

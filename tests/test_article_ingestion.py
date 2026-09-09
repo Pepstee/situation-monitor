@@ -124,3 +124,73 @@ class TestFixtureIngestion:
             (item.source.casefold(), item.title.casefold(), item.url) for item in first
         ]
         assert keys == sorted(keys)
+
+
+@pytest.fixture
+def source_http_server():
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            name = "hn_sample.json" if self.path.startswith("/api/") else "github_trending_sample.html"
+            data = (FIXTURES / name).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_live_cli_uses_real_http_and_shared_parsers(source_http_server, monkeypatch, capsys):
+    import json
+    from urllib.parse import urlsplit
+    from monitor.cli import main
+    from monitor.ingest import HTTPClient
+
+    original = HTTPClient.get
+    requested = []
+
+    def redirected(self, source):
+        requested.append(source)
+        parsed = urlsplit(source)
+        return original(self, source_http_server + parsed.path + "?" + parsed.query)
+
+    monkeypatch.setattr(HTTPClient, "get", redirected)
+    assert main(["fetch", "--live", "--limit", "5", "--language", "python", "--since", "weekly"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["network_attempted"] is True
+    assert output["mode"] == "live-fetch" and output["count"] == 10
+    assert requested == [
+        "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=5",
+        "https://github.com/trending/python?since=weekly",
+    ]
+
+
+def test_http_response_limit_is_enforced(source_http_server):
+    from monitor.ingest import HTTPClient
+    with pytest.raises(ValueError, match="byte limit"):
+        HTTPClient(max_bytes=10).get(source_http_server + "/api/")
+
+
+def test_invalid_live_rss_is_rejected_before_network(monkeypatch):
+    from monitor.ingest import HTTPClient, fetch_live_articles
+
+    def forbidden(*args):
+        raise AssertionError("network request before validating sources")
+
+    monkeypatch.setattr(HTTPClient, "get", forbidden)
+    with pytest.raises(ValueError, match="rss-url"):
+        fetch_live_articles(["rss"])

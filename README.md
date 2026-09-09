@@ -75,6 +75,21 @@ Expected options:
 - `--group-by FIELD`: group events by field (e.g., category, severity)
 - `--filter EXPR`: filter events before aggregation (e.g., severity >= ERROR)
 
+### Explicit live sources
+
+The archived live ingesters now use the same parsers as fixture mode:
+
+```bash
+python3 -m monitor fetch --live --source hackernews --limit 30
+python3 -m monitor fetch --live --source github_trending --language python --since weekly
+python3 -m monitor fetch --live --source rss --rss-url https://example.org/feed.xml
+python3 -m monitor fetch --dry-run --digest
+```
+
+`--live` is required for HTTP requests. Live mode defaults to HN and GitHub when no source
+is selected, with a 15-second request timeout and a 4 MB response limit. RSS needs an explicit
+URL. Fetching does not start a daemon, invoke a model, send alerts or write state.
+
 ### Local alert events
 
 Evaluate an inclusive score rule against bundled local fixtures and retain only new
@@ -108,7 +123,7 @@ This is a **bounded scaffold**. The following are intentionally out of scope:
 - **No realtime ingestion:** Events are read from static JSON files only.
 - **No implicit persistent storage:** Stateful commands require an explicit `--state`
   SQLite path; summary and dry-run fetch commands remain side-effect free.
-- **No remote sources:** No API calls, network I/O, or external data fetches.
+- **Explicit remote fetching:** `fetch --live` enables public source HTTP reads. Fixture commands stay offline; no background fetching is implicit.
 - **No machine learning:** No anomaly detection, predictions, or statistical modeling.
 - **No UI/visualization:** Terminal output only; no web interface or graphing.
 - **No external dependencies:** Uses Python standard library exclusively (no pip installs).
