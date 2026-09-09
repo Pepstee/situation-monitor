@@ -357,3 +357,25 @@ def test_dashboard_rejects_nonfinite_time_and_invalid_bounds(tmp_path, capsys):
             main(["dashboard", "--state", str(state_path), *arguments])
         assert exc_info.value.code == 2
         assert message in capsys.readouterr().err
+
+
+def test_bundled_default_summary_is_runnable(capsys):
+    assert main([]) == 0
+    result = capsys.readouterr()
+    assert result.err == ""
+    assert "3 economic events detected" in result.out
+    assert "2 geopolitical events detected" in result.out
+    assert "2 weather events detected" in result.out
+
+
+def test_missing_summary_input_is_not_reported_as_success(tmp_path, capsys):
+    assert main(["summary", str(tmp_path / "missing.json")]) == 1
+    result = capsys.readouterr()
+    assert "File not found" in result.err
+
+
+def test_valid_empty_event_stream_remains_successful(tmp_path, capsys):
+    path = tmp_path / "empty.json"
+    path.write_text("[]")
+    assert main(["summary", str(path)]) == 0
+    assert capsys.readouterr().out == "No events detected.\n"

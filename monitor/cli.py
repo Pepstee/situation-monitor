@@ -159,7 +159,7 @@ def _run_summary(input_file: str) -> int:
     for error in errors:
         print(f"Warning: {error}", file=sys.stderr)
     print(summarize(events))
-    return 0
+    return 1 if errors and not events else 0
 
 
 def _run_fixture_fetch(

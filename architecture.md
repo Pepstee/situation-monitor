@@ -1,3 +1,32 @@
+## Migration reconciliation — 9 September 2026
+
+The active implementation is the `monitor` package on
+`codex/situation-monitor-capability-union-r1`. The design below is historical and its
+`src` layout and proposed interfaces are not a description of the current tree.
+
+Compared sources: the original Mac `situation-monitor`, the OX union branch, and the
+archived agentic-orchestrator `situation-monitor`, `situation-monitor-v2`, and empty
+`situation-monitor-v3` directories. The original Event schema tests are retained.
+The canonical default event fixture has been restored from the original Mac copy;
+a missing or wholly invalid input now exits unsuccessfully rather than claiming success.
+
+| Capability | Current consolidation state |
+| --- | --- |
+| Event loading and deterministic summary | Retained; bundled default command verified |
+| HN, GitHub and RSS parsing | Retained with fixture/injected byte clients |
+| Scoring, deduplication and clustering | Deterministic path retained |
+| SQLite state, source scheduling, alert lifecycle and dashboard JSON | Retained and tested |
+| Live HN/GitHub HTTP ingestion | Missing from the union CLI; implemented in archived prototypes |
+| HTTP dashboard and JSON endpoints | Missing; prototype servers contain useful behaviour |
+| Recurring scheduler lifecycle | Missing; union currently provides a one-shot tick |
+| Configuration loading | Missing; prototypes have usable configuration loaders |
+| Alert log output and callback dispatch | Missing; union retains persistent alert events only |
+| Optional model scoring | Missing; prototypes include HTTP/injected-provider scoring paths |
+
+Migration is pending this capability reconciliation. An earlier bounded-union milestone
+must not be treated as proof that every prototype capability has survived. Restoring code
+does not activate networking, callbacks, model spend or persistent services by default.
+
 # Situation Monitor: Architecture
 
 ## Overview
