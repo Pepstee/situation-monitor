@@ -1,3 +1,8 @@
+# Current Linux installation
+The canonical package is `monitor`. Run `python3 -m monitor --help` from this workspace. Use `watch --state PATH --cycles 1` for a bounded fixture pipeline, `serve --state PATH` for the loopback dashboard, and `sources`, `checks`, `events` for inert metadata records. Explicit `--live` enables source requests; an explicit model endpoint enables model requests. Foreign prototype databases require separate preservation and are not automatically imported.
+
+The original scaffold narrative below is historical. Its `src/` layout and `python3 -m situation_monitor` examples are superseded. The later migration sections and actual command help describe the implemented behaviour.
+
 # Situation Monitor
 
 A lightweight, zero-dependency tool for ingesting local events and generating human-readable situational summaries.

@@ -33,7 +33,7 @@ Migration is pending this capability reconciliation. An earlier bounded-union mi
 must not be treated as proof that every prototype capability has survived. Restoring code
 does not activate networking, callbacks, model spend or persistent services by default.
 
-# Situation Monitor: Architecture
+# Historical scaffold architecture (superseded)
 
 ## Overview
 
