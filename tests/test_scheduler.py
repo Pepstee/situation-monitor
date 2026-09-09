@@ -260,3 +260,69 @@ def test_fixture_tick_rejects_implicit_state_and_invalid_interval(capsys):
         )
     assert invalid_interval.value.code == 2
     assert "must be positive" in capsys.readouterr().err
+
+
+def test_archived_json_and_ini_configuration_are_loaded(tmp_path):
+    from monitor.config import load_config
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps({"db_path": "explicit.db", "interval": 17,
+                                  "sources": ["hn", "github"], "alert_threshold": 0.8,
+                                  "alert_log": "alerts.log", "llm_endpoint": "http://localhost:11434"}))
+    config = load_config(legacy)
+    assert config.db_path == "explicit.db" and config.poll_interval_s == 17
+    assert config.sources == ("hackernews", "github_trending")
+    assert config.alert_threshold == 0.8 and config.alert_log == "alerts.log"
+    assert config.llm_endpoint == "http://localhost:11434"
+    ini = tmp_path / "legacy.ini"
+    ini.write_text("[database]\npath=other.db\n[monitor]\npoll_interval_s=7\nlog_level=debug\n")
+    config = load_config(ini)
+    assert (config.db_path, config.poll_interval_s, config.log_level) == ("other.db", 7, "DEBUG")
+    with pytest.raises(FileNotFoundError):
+        load_config(tmp_path / "missing.ini")
+
+
+def test_recurring_loop_records_repeated_checks_and_stops(tmp_path):
+    import threading
+    from monitor.scheduler import run_source_loop
+    stop = threading.Event()
+    times = iter([100.0, 102.0, 104.0])
+    with StateStore(tmp_path / "loop.db") as store:
+        store.register_source("hackernews", "hackernews", 1)
+        store.register_source("unadmitted", "rss", 1)
+        rows = list(run_source_loop(store, lambda source: fetch_fixture_articles(
+            __import__("pathlib").Path(__file__).parents[1] / "monitor/fixtures", [source]
+        ), poll_interval_s=0.001, max_cycles=3, clock=lambda: next(times),
+            source_names=["hackernews"], stop_event=stop))
+        assert len(rows) == 3
+        assert [r[1][0].item_count for r in rows] == [5, 5, 5]
+        assert len(store.list_runs()) == 3
+        stop.set()
+        assert list(run_source_loop(store, lambda source: [], poll_interval_s=1, stop_event=stop)) == []
+
+
+def test_watch_uses_explicit_config_and_preserves_live_registration(tmp_path, monkeypatch, capsys):
+    state = tmp_path / "watch.db"
+    with StateStore(state) as store:
+        store.register_source("live:hackernews", "hackernews", 1)
+    config = tmp_path / "watch.json"
+    config.write_text(json.dumps({"db_path": str(state), "interval": 1, "sources": ["hn"]}))
+    def forbidden(*args, **kwargs):
+        raise AssertionError("offline watch attempted network")
+    monkeypatch.setattr(urllib.request, "urlopen", forbidden)
+    assert main(["watch", "--config", str(config), "--cycles", "1"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["mode"] == "fixture-watch"
+    assert [r["source"] for r in output["results"]] == ["hackernews"]
+    with StateStore(state) as store:
+        assert [r.source for r in store.list_runs()] == ["hackernews"]
+    assert main(["watch", "--config", str(config), "--cycles", "1"]) == 0
+    assert json.loads(capsys.readouterr().out)["results"] == []
+
+
+def test_watch_rejects_invalid_config_before_creating_state(tmp_path, capsys):
+    state = tmp_path / "must-not-exist.db"
+    config = tmp_path / "bad.json"
+    config.write_text(json.dumps({"db_path": str(state), "interval": 0}))
+    assert main(["watch", "--config", str(config), "--cycles", "1"]) == 1
+    assert not state.exists()
+    assert "positive" in capsys.readouterr().err

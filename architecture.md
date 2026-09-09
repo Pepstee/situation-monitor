@@ -18,8 +18,8 @@ a missing or wholly invalid input now exits unsuccessfully rather than claiming 
 | SQLite state, source scheduling, alert lifecycle and dashboard JSON | Retained and tested |
 | Live HN/GitHub HTTP ingestion | Restored through canonical parsers and explicit `fetch --live`; real public CLI smoke passed |
 | HTTP dashboard and JSON endpoints | Missing; prototype servers contain useful behaviour |
-| Recurring scheduler lifecycle | Missing; union currently provides a one-shot tick |
-| Configuration loading | Missing; prototypes have usable configuration loaders |
+| Recurring scheduler lifecycle | Restored by `watch` and the interruptible canonical `run_source_loop`; bounded two-cycle CLI verified |
+| Configuration loading | JSON and INI formats retained by `monitor.config`; watch consumes state, sources, interval and logging; alert/model fields await their integration |
 | Alert log output and callback dispatch | Missing; union retains persistent alert events only |
 | Upstream popularity/author metadata | Still needs reconciliation with prototype raw-score and source metadata fields |
 | Optional model scoring | Missing; prototypes include HTTP/injected-provider scoring paths |
@@ -314,3 +314,10 @@ Most Common Messages:
 ---
 
 For implementation details, see [execution_order.md](execution_order.md) and the task breakdown in [task_graph.json](task_graph.json).
+
+Configuration has a distinct serialization responsibility, so `monitor/config.py` is the single
+new owner replacing the two archived loaders. There was no configuration owner in `monitor` to
+extend. Missing explicit configuration files now fail rather than silently creating a default
+SQLite database. Recurrence extends the existing scheduler and state store rather than introducing
+a second scheduler. Live registrations are named `live:<source>` and commands admit only their
+selected registrations, preventing an offline fixture tick from executing or relabelling live work.

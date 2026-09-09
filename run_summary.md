@@ -312,3 +312,18 @@ and `/tmp/situation-monitor-live-github-20260909.json`, with SHA-256 values
 Raw HTTP bodies/headers were not archived for those smoke attempts. This is entrypoint proof,
 not a complete canary archive or whole-project migration acceptance. Remaining gaps are tracked
 in the reconciliation table in `architecture.md`.
+
+## Recurring-check reconciliation, 9 September 2026
+
+The operator explicitly authorised direct Codex consolidation for this migration after
+the OX workspace's Situation Monitor provenance restriction was disclosed. This increment
+and commits cdbeffd and 702e44a were implemented through Codex, not Orchestrator-v3.
+No Orchestrator stop control or runtime configuration was changed.
+
+The canonical scheduler now supports interruptible repeated checks and selected-source
+isolation. JSON/INI configuration feeds the explicit `watch` command. All 97 tests passed.
+A real two-cycle fixture watch exited successfully, stored two run receipts, and passed
+SQLite integrity checking. Its command, source identities, output hash and terminal result
+are preserved in `/var/folders/06/9jhy0p4s0f55cb7rpvchtb9r0000gn/T/situation-watch-smoke-ng04fhwc/receipt.json`.
+The source graph was refreshed without model calls (646 nodes, 4581 edges). Historical
+document semantics remain partial. This verifies recurring checks, not full reconciliation.

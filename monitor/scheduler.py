@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+import math
+import threading
+import time
 
 from monitor.storage import StateStore
 from schemas import Article
@@ -33,12 +36,16 @@ def run_due_source_checks(
     collect: FixtureCollector,
     *,
     checked_at: float,
+    source_names: Iterable[str] | None = None,
 ) -> list[SourceCheckResult]:
     """Collect every due source once, recording failures without stopping the tick."""
 
     results: list[SourceCheckResult] = []
+    admitted = None if source_names is None else set(source_names)
     for due in store.due_sources(now=checked_at):
         source = due.source
+        if admitted is not None and source.name not in admitted:
+            continue
         try:
             articles = collect(source.fixture_source)
             if not isinstance(articles, list) or not all(
@@ -72,3 +79,28 @@ def run_due_source_checks(
             )
         )
     return results
+
+
+def run_source_loop(
+    store: StateStore, collect: FixtureCollector, *, poll_interval_s: float,
+    max_cycles: int | None = None, stop_event: threading.Event | None = None,
+    clock: Callable[[], float] = time.time,
+    source_names: Iterable[str] | None = None,
+):
+    """Repeat the canonical due-source operation with bounded or interruptible lifetime."""
+    if not math.isfinite(poll_interval_s) or poll_interval_s <= 0:
+        raise ValueError("poll interval must be positive and finite")
+    if max_cycles is not None and max_cycles < 1:
+        raise ValueError("max_cycles must be positive")
+    stop = stop_event if stop_event is not None else threading.Event()
+    cycles = 0
+    admitted = None if source_names is None else tuple(source_names)
+    while not stop.is_set():
+        checked_at = clock()
+        yield checked_at, run_due_source_checks(
+            store, collect, checked_at=checked_at, source_names=admitted,
+        )
+        cycles += 1
+        if max_cycles is not None and cycles >= max_cycles:
+            break
+        stop.wait(poll_interval_s)

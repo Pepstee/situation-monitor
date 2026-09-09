@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import sys
+import logging
 from collections import Counter
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from monitor.analysis import analyze_articles, build_digest
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.ingest import fetch_live_articles
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
+from monitor.scheduler import run_source_loop
+from monitor.config import load_config
 from monitor.storage import AlertEvent, RunRecord, StateStore, StoredArticle
 from monitor.summarize import summarize
 
@@ -35,6 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
         "summary", help="summarize a local JSON event list"
     )
     summary_parser.add_argument("input", nargs="?", default=str(DEFAULT_EVENTS))
+
+    watch_parser = subcommands.add_parser("watch", help="repeat selected source checks until interrupted")
+    watch_parser.add_argument("--config", help="archived JSON or INI configuration file")
+    watch_parser.add_argument("--state", help="explicit SQLite path, overriding configuration")
+    watch_parser.add_argument("--interval-seconds", type=int, help="poll and source interval")
+    watch_parser.add_argument("--cycles", type=int, help="stop after this many cycles")
+    watch_parser.add_argument("--live", action="store_true", help="explicitly enable source HTTP requests")
+    watch_parser.add_argument("--source", action="append", choices=SOURCE_CHOICES, dest="sources")
+    watch_parser.add_argument("--fixture-dir", default=str(DEFAULT_FIXTURES))
+    watch_parser.add_argument("--rss-url", action="append", default=[])
 
     fetch_parser = subcommands.add_parser(
         "fetch", help="fetch explicitly selected live sources or inspect local fixtures"
@@ -271,6 +284,7 @@ def _run_fixture_tick(
             store,
             lambda source: fetch_fixture_articles(fixture_dir, [source]),
             checked_at=checked_at,
+            source_names=selected_sources,
         )
     output = {
         "checked_at": checked_at,
@@ -283,6 +297,47 @@ def _run_fixture_tick(
     if any(result.status == "failed" for result in results):
         return CHECK_FAILURE_EXIT_CODE
     return 0
+
+
+def _run_watch(arguments) -> int:
+    config = load_config(arguments.config)
+    state_path = arguments.state or config.db_path
+    interval = arguments.interval_seconds if arguments.interval_seconds is not None else config.poll_interval_s
+    if not state_path:
+        raise ValueError("watch requires --state or an explicit configured db_path")
+    if interval <= 0 or (arguments.cycles is not None and arguments.cycles <= 0):
+        raise ValueError("interval and cycles must be positive")
+    sources = arguments.sources or list(config.sources) or list(
+        ("hackernews", "github_trending") if arguments.live else SOURCE_CHOICES
+    )
+    if arguments.live and "rss" in sources and not arguments.rss_url:
+        raise ValueError("live RSS requires --rss-url")
+    if config.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise ValueError("unknown configured log level")
+    logging.basicConfig(level=config.log_level)
+    names = [("live:" if arguments.live else "") + source for source in sources]
+    def collect(source):
+        if arguments.live:
+            return fetch_live_articles([source], rss_urls=arguments.rss_url)
+        return fetch_fixture_articles(arguments.fixture_dir, [source])
+    failed = False
+    with StateStore(state_path) as store:
+        for name, source in zip(names, sources):
+            store.register_source(name, source, interval)
+        try:
+            for checked_at, results in run_source_loop(
+                store, collect, poll_interval_s=interval,
+                max_cycles=arguments.cycles, source_names=names,
+            ):
+                failed = failed or any(result.error is not None for result in results)
+                print(json.dumps({
+                    "mode": "live-watch" if arguments.live else "fixture-watch",
+                    "checked_at": checked_at, "network_enabled": arguments.live,
+                    "results": [_check_record(result) for result in results],
+                }, sort_keys=True), flush=True)
+        except KeyboardInterrupt:
+            return 130
+    return 1 if failed else 0
 
 
 def _run_fixture_alert_evaluation(
@@ -457,6 +512,12 @@ def main(argv: list[str] | None = None) -> int:
         return _run_summary(str(DEFAULT_EVENTS))
     if arguments.command == "summary":
         return _run_summary(arguments.input)
+    if arguments.command == "watch":
+        try:
+            return _run_watch(arguments)
+        except (OSError, ValueError) as exc:
+            print(f"Watch failed: {exc}", file=sys.stderr)
+            return 1
     if arguments.command == "fetch":
         if arguments.live:
             try:

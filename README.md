@@ -90,6 +90,23 @@ python3 -m monitor fetch --dry-run --digest
 is selected, with a 15-second request timeout and a 4 MB response limit. RSS needs an explicit
 URL. Fetching does not start a daemon, invoke a model, send alerts or write state.
 
+### Recurring source checks
+
+Run selected fixture checks repeatedly into an explicit database:
+
+```bash
+python3 -m monitor watch --state state.sqlite3 --source hackernews --interval-seconds 60
+python3 -m monitor watch --state state.sqlite3 --source hackernews --interval-seconds 1 --cycles 2
+python3 -m monitor watch --config monitor.json --live
+```
+
+Use Ctrl-C to stop the foreground process. Each completed source check has a durable SQLite
+receipt; `--cycles` provides a bounded run. JSON configuration accepts the archived `db_path`,
+`interval`, `sources`, `alert_threshold`, `alert_log` and `llm_endpoint` fields. INI configuration
+accepts `[database] path` and `[monitor] poll_interval_s` / `log_level`. CLI state and interval
+options override configuration. Missing configuration files fail, and no database path is implicit.
+Alert/model configuration is retained but is not activated by this source-check command yet.
+
 ### Local alert events
 
 Evaluate an inclusive score rule against bundled local fixtures and retain only new
