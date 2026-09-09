@@ -25,8 +25,8 @@ a missing or wholly invalid input now exits unsuccessfully rather than claiming 
 | Configuration loading | JSON and INI formats retained by `monitor.config`; watch consumes state, sources, interval, logging, alert and explicit model settings |
 | Alert log output and callback dispatch | Restored by monitor.alerts and watch; persistent firing remains owned by StateStore, file delivery survives restart |
 | Upstream popularity/author metadata | Restored in canonical Article metadata, parser output and SQLite v4; canonical schema-3 rows and receipts survive upgrade |
-| Near-duplicate digest suppression | Pending v2 presentation behaviour; source records must remain intact |
-| Generic source/check definitions | Pending v2 implemented registry/CRUD; execution of those checks was not implemented in the prototype |
+| Near-duplicate digest suppression | Restored optional score-ranked text suppression in the canonical digest renderer; source records remain intact |
+| Generic source/check definitions | Restored in StateStore and sources/checks/events CLI; targets and conditions remain inert metadata as in v2 |
 | Optional model scoring | Restored explicit JSON/Ollama HTTP scorer and injected scorer function; bounded invalid-response retries, failure receipts and default offline heuristic |
 
 Migration is pending this capability reconciliation. An earlier bounded-union milestone
@@ -357,3 +357,20 @@ and avoiding repeated model calls within 24 hours. Unscored failures remain elig
 retry. `--digest-output` writes the current batch's actual scored Markdown digest. Foreign
 v1/v2 database layouts are rejected before schema writes and must be preserved separately.
 This is not an importer for prototype runtime data.
+
+### Final known-copy capability accounting
+
+The original Mac scaffold, OX canonical, archived agentic v1/v2 and empty v3, and the
+claude-orchestrator task-specification directory have been compared. All implemented
+behaviour identified in that review is represented above. V2 source/check/event persistence
+uses the existing sources and StateStore owner with distinct condition_checks and
+condition_events tables. These hold arbitrary target/condition definitions and supplied
+events; they do not execute targets or evaluate conditions. Existing Article alert events
+remain a separate lifecycle. Canonical database versions 3 and 4 upgrade to version 5.
+
+Intentional replacements: duplicated transport/model implementations use the canonical
+interfaces; provider-specific SDK auto-construction is replaced by explicit HTTP or injected
+scoring. Defective threshold units, unsafe HTML, silent failure and missing-default behaviour
+are repaired. Historical prototype databases are not converted or deleted. Missing historical
+validation reports remain missing. No runtime capability was inferred from aspirational
+portfolio text or unexecuted task specifications. Linux acceptance is recorded separately.

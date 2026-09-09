@@ -272,3 +272,17 @@ def test_model_protocol_and_watch_pipeline_over_real_http(tmp_path, capsys):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_optional_near_duplicate_digest_keeps_best_without_losing_source_records():
+    low = scored("Shared research news", url="https://example.com/low", score=20)
+    high = scored("Shared research news", url="https://example.com/high", score=80)
+    other = scored("Different volcano warning", url="https://example.com/other", score=70)
+    clusters = cluster_scored_articles([low, high, other])
+    full = generate_digest(clusters)
+    compact = generate_digest(clusters, near_duplicate_threshold=0.65)
+    assert '/low' in full and '/high' in full
+    assert '/low' not in compact and '/high' in compact and '/other' in compact
+    assert sum(len(c.articles) for c in clusters) == 3
+    with pytest.raises(ValueError):
+        generate_digest(clusters, near_duplicate_threshold=1.1)

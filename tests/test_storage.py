@@ -361,7 +361,7 @@ def test_legacy_database_upgrade_preserves_rows_and_round_trips_metadata(tmp_pat
     assert path.read_bytes() == original_bytes
     article.metadata = {"source_id": "old", "raw_score": 1200, "author": "example", "num_comments": 4}
     with StateStore(path) as store:
-        assert store.conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert store.conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert store.conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
         assert store.recent_articles(1, now=200)[0].article.metadata == {}
         store.save_article(article, seen_at=200)

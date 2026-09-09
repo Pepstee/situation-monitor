@@ -219,3 +219,16 @@ unscored items. `--digest-output PATH` writes the current batch's scored Markdow
 An empty batch writes an empty digest. Older prototype databases have different layouts and
 are rejected without conversion; preserve them separately. Only earlier canonical Article
 databases are upgraded automatically.
+
+Near-identical stories can be suppressed in digest output with `--dedup-text`, retaining
+the highest-scored story at the archived 0.65 text similarity threshold. This changes only
+the presentation; stored articles remain available. The equivalent programmatic option
+is `generate_digest(clusters, near_duplicate_threshold=0.65)`.
+
+### Stored source and condition definitions
+
+The `sources add/list`, `checks add/list` and `events record/list/resolve` commands retain
+the v2 metadata lifecycle. Each requires `--state PATH`; `--help` lists its arguments.
+Source kinds `http`, `file` and `cmd` describe targets only. Recording a target or condition
+does not fetch, open, execute or evaluate it. These definitions are excluded from watch/tick.
+Schema 5 stores them alongside the existing feed registry without changing article alerts.

@@ -370,3 +370,18 @@ Code graph: 803 nodes, 8523 edges, SHA-256 `63e0d4858596a088192ffc7acff05c06527e
 remain partial. Final copy review identified v2 near-duplicate suppression and generic
 source/check definition persistence as remaining work. Migration is still pending those
 capabilities; no whole-project no-loss claim is made. No deadline was specified.
+
+## Known-copy reconciliation complete, 9 September 2026
+
+All 118 tests pass. Optional near-text digest suppression retains the highest score without
+deleting source records. Schema-5 registry commands retain source targets, conditions and
+recorded/resolved events without executing them. Real subprocess output and a lifecycle
+receipt are at `/var/folders/06/9jhy0p4s0f55cb7rpvchtb9r0000gn/T/situation-registry-smoke-mlhsvhoi/receipt.json`.
+The database owner and source registry were extended rather than duplicated. Read-only
+canonical v3/v4 compatibility and populated upgrades pass. The final known-copy accounting
+and intentional replacements are in architecture.md. Code graph: 852 nodes, 10023 edges,
+SHA-256 `03ac65035aa3e219b8a5fc1031d0e4b686daf53bc8bdf82fbc4aba7f352baf60`. Semantic document coverage remains historical/partial.
+Dashboard desktop/mobile images are in the earlier dashboard smoke directory under
+.playwright-cli; mobile390px had no document overflow. No operator deadline was specified.
+Next acceptance step is the exact committed source on ArtVault/Linux, then sealing and a
+project-specific polish worker. This local milestone is not yet Linux migration acceptance.

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sqlite3
+from dataclasses import asdict
 import sys
 import logging
 import time
@@ -35,6 +37,48 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="situation-monitor")
     subcommands = parser.add_subparsers(dest="command")
 
+    sources_parser = subcommands.add_parser("sources", help="store/list source definitions without executing targets")
+    source_actions = sources_parser.add_subparsers(dest="registry_action", required=True)
+    source_add = source_actions.add_parser("add")
+    source_add.add_argument("name")
+    source_add.add_argument("kind", choices=("http", "file", "cmd"))
+    source_add.add_argument("target")
+    source_add.add_argument("--interval", type=int, default=60)
+    source_add.add_argument("--tags", default="")
+    source_add.add_argument("--disabled", action="store_true")
+    source_list = source_actions.add_parser("list")
+    source_list.add_argument("--enabled", action="store_true")
+    for action in (source_add, source_list):
+        action.add_argument("--state", required=True)
+
+    checks_parser = subcommands.add_parser("checks", help="store/list condition definitions without evaluating them")
+    check_actions = checks_parser.add_subparsers(dest="registry_action", required=True)
+    check_add = check_actions.add_parser("add")
+    check_add.add_argument("source_id", type=int)
+    check_add.add_argument("name")
+    check_add.add_argument("condition")
+    check_add.add_argument("--severity", choices=("info", "warning", "critical"), default="warning")
+    check_add.add_argument("--disabled", action="store_true")
+    check_list = check_actions.add_parser("list")
+    check_list.add_argument("--source-id", type=int)
+    for action in (check_add, check_list):
+        action.add_argument("--state", required=True)
+
+    events_parser = subcommands.add_parser("events", help="record/list/resolve stored condition events")
+    event_actions = events_parser.add_subparsers(dest="registry_action", required=True)
+    event_add = event_actions.add_parser("record")
+    event_add.add_argument("check_id", type=int)
+    event_add.add_argument("fired_at", help="ISO-8601 event timestamp")
+    event_add.add_argument("detail")
+    event_list = event_actions.add_parser("list")
+    event_list.add_argument("--check-id", type=int)
+    event_list.add_argument("--unresolved", action="store_true")
+    event_list.add_argument("--limit", type=int, default=100)
+    event_resolve = event_actions.add_parser("resolve")
+    event_resolve.add_argument("event_id", type=int)
+    for action in (event_add, event_list, event_resolve):
+        action.add_argument("--state", required=True)
+
     summary_parser = subcommands.add_parser(
         "summary", help="summarize a local JSON event list"
     )
@@ -50,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--fixture-dir", default=str(DEFAULT_FIXTURES))
     watch_parser.add_argument("--rss-url", action="append", default=[])
     watch_parser.add_argument("--model-endpoint", help="explicit JSON/Ollama scoring URL")
+    watch_parser.add_argument("--dedup-text", action="store_true", help="suppress near-duplicate text in digest output")
     watch_parser.add_argument("--digest-output", help="write scored Markdown digest to this file")
     watch_parser.add_argument("--alert-log", help="append delivered alert events as JSON lines")
     watch_parser.add_argument("--alert-threshold", type=int, help="inclusive score threshold from 0 to 100")
@@ -57,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser = subcommands.add_parser(
         "fetch", help="fetch explicitly selected live sources or inspect local fixtures"
     )
+    fetch_parser.add_argument("--dedup-text", action="store_true", help="suppress near-duplicate text in digest output")
     fetch_mode = fetch_parser.add_mutually_exclusive_group()
     fetch_mode.add_argument(
         "--dry-run",
@@ -198,14 +244,15 @@ def _run_fixture_fetch(
     sources: list[str] | None,
     *,
     digest: bool = False,
+    dedup_text: bool = False,
 ) -> int:
     articles = fetch_fixture_articles(fixture_dir, sources or SOURCE_CHOICES)
-    return _emit_fetch(articles, digest=digest, live=False)
+    return _emit_fetch(articles, digest=digest, live=False, dedup_text=dedup_text)
 
 
-def _emit_fetch(articles, *, digest: bool, live: bool) -> int:
+def _emit_fetch(articles, *, digest: bool, live: bool, dedup_text: bool = False) -> int:
     if digest:
-        print(build_digest(articles), end="")
+        print(build_digest(articles, near_duplicate_threshold=0.65 if dedup_text else None), end="")
         return 0
     source_counts = Counter(article.source for article in articles)
     result = {
@@ -366,7 +413,7 @@ def _run_watch(arguments) -> int:
                 if scored:
                     store.save_clusters(clusters, seen_at=checked_at)
                 if arguments.digest_output:
-                    Path(arguments.digest_output).write_text(generate_digest(clusters), encoding="utf-8")
+                    Path(arguments.digest_output).write_text(generate_digest(clusters, near_duplicate_threshold=0.65 if arguments.dedup_text else None), encoding="utf-8")
                 if model_endpoint and collected:
                     store.record_run("llm", started, time.time(), item_count=len(scored),
                         error=f"{len(scoring_errors)} item(s) failed scoring" if scoring_errors else None)
@@ -495,7 +542,7 @@ def dashboard_snapshot(
         stats = reliability.get(source.name)
         due_at = (
             None
-            if not source.enabled
+            if not source.enabled or source.kind != "feed"
             else snapshot_at
             if last_run is None
             else last_run.finished_at + source.interval_s
@@ -506,6 +553,7 @@ def dashboard_snapshot(
                 "due_at": due_at,
                 "enabled": source.enabled,
                 "fixture_source": source.fixture_source,
+                **({"kind": source.kind, "target": source.target, "tags": source.tags} if source.kind != "feed" else {}),
                 "hit_rate": None if stats is None else stats.hit_rate,
                 "mean_latency_ms": None if stats is None else stats.mean_latency_ms,
                 "interval_seconds": source.interval_s,
@@ -567,9 +615,43 @@ def _run_dashboard(state_path: str, *, snapshot_at: float, window_hours: float, 
     return 0
 
 
+def _run_registry(arguments) -> int:
+    action = arguments.registry_action
+    # Listing existing state cannot silently create an empty replacement database.
+    with StateStore(arguments.state, read_only=action == "list") as store:
+        if arguments.command == "sources":
+            if action == "add":
+                result = {"source_id": store.add_source(arguments.name, arguments.kind, arguments.target,
+                    arguments.interval, enabled=not arguments.disabled, tags=arguments.tags)}
+            else:
+                result = [asdict(source) for source in store.list_sources(enabled_only=arguments.enabled)]
+        elif arguments.command == "checks":
+            if action == "add":
+                result = {"check_id": store.add_check(arguments.source_id, arguments.name,
+                    arguments.condition, arguments.severity, enabled=not arguments.disabled)}
+            else:
+                result = [asdict(check) for check in store.list_checks(arguments.source_id)]
+        elif action == "record":
+            result = {"event_id": store.record_event(arguments.check_id, arguments.fired_at, arguments.detail)}
+        elif action == "resolve":
+            result = {"resolved": store.resolve_event(arguments.event_id)}
+        else:
+            result = [asdict(event) for event in store.list_events(arguments.check_id,
+                unresolved_only=arguments.unresolved, limit=arguments.limit)]
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
+
+    if arguments.command in {"sources", "checks", "events"}:
+        try:
+            return _run_registry(arguments)
+        except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+            print(f"Registry failed: {exc}", file=sys.stderr)
+            return 1
 
     # Preserve the original no-argument local-summary behaviour.
     if arguments.command is None:
@@ -611,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
             except (OSError, ValueError) as exc:
                 print(f"Live fetch failed: {exc}", file=sys.stderr)
                 return 1
-            return _emit_fetch(articles, digest=arguments.digest, live=True)
+            return _emit_fetch(articles, digest=arguments.digest, live=True, dedup_text=arguments.dedup_text)
         if not arguments.dry_run:
             parser.error(
                 "fetch requires --dry-run or --live"
@@ -619,7 +701,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_fixture_fetch(
             arguments.fixture_dir,
             arguments.sources,
-            digest=arguments.digest,
+            digest=arguments.digest, dedup_text=arguments.dedup_text,
         )
     if arguments.command == "tick":
         if arguments.interval_seconds <= 0:

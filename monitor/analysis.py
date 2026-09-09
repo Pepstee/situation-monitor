@@ -286,13 +286,33 @@ def rank_clusters_for_digest(clusters: list[ArticleCluster]) -> list[ArticleClus
     ]
 
 
-def generate_digest(clusters: list[ArticleCluster]) -> str:
+def generate_digest(
+    clusters: list[ArticleCluster], *, near_duplicate_threshold: float | None = None,
+) -> str:
     """Render score-ranked clusters as deterministic inspectable Markdown."""
 
+    selected = None
+    if near_duplicate_threshold is not None:
+        if not 0 <= near_duplicate_threshold <= 1:
+            raise ValueError("near duplicate threshold must be in [0, 1]")
+        selected = set()
+        token_sets = []
+        candidates = sorted((item for cluster in clusters for item in cluster.articles),
+                            key=lambda item: -item.score)
+        for item in candidates:
+            tokens = _words(item.article.title + " " + item.article.body)
+            if any(len(tokens & previous) / len(tokens | previous) >= near_duplicate_threshold
+                   if tokens | previous else True for previous in token_sets):
+                continue
+            token_sets.append(tokens)
+            selected.add(id(item))
     lines = ["# Situation Monitor Digest", ""]
     for cluster in rank_clusters_for_digest(clusters):
+        members = [item for item in cluster.articles if selected is None or id(item) in selected]
+        if not members:
+            continue
         lines.extend((f"## Cluster {cluster.cluster_id}", ""))
-        for item in cluster.articles:
+        for item in members:
             article = item.article
             lines.append(
                 f"- [{article.title}]({article.url}) — {article.source} | "
@@ -307,9 +327,11 @@ def generate_digest(clusters: list[ArticleCluster]) -> str:
 def build_digest(
     articles: list[Article],
     similarity_threshold: float = 0.5,
+    *, near_duplicate_threshold: float | None = None,
 ) -> str:
     """Run the complete deterministic post-ingestion Article analysis path."""
 
     return generate_digest(
-        analyze_articles(articles, similarity_threshold=similarity_threshold)
+        analyze_articles(articles, similarity_threshold=similarity_threshold),
+        near_duplicate_threshold=near_duplicate_threshold,
     )

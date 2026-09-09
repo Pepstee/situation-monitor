@@ -21,7 +21,7 @@ from monitor.analysis import (
 from schemas import Article, SourceReliability
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _DDL = f"""
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS sources (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL UNIQUE,
     fixture_source  TEXT NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'feed',
+    target          TEXT NOT NULL DEFAULT '',
+    tags            TEXT NOT NULL DEFAULT '',
     interval_s      INTEGER NOT NULL CHECK (interval_s > 0),
     enabled         INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
 );
@@ -100,6 +103,25 @@ CREATE TABLE IF NOT EXISTS alert_events (
 CREATE INDEX IF NOT EXISTS idx_alert_events_open_fired
     ON alert_events (resolved, fired_at DESC, id DESC);
 
+-- Stored conditions and their manually recorded events share the source registry.
+-- They are metadata, not article threshold alerts and not executable expressions.
+CREATE TABLE IF NOT EXISTS condition_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    name TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
+);
+CREATE TABLE IF NOT EXISTS condition_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    check_id INTEGER NOT NULL REFERENCES condition_checks(id),
+    fired_at TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    resolved INTEGER NOT NULL DEFAULT 0 CHECK (resolved IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS idx_condition_events_check ON condition_events (check_id);
+CREATE INDEX IF NOT EXISTS idx_condition_events_fired ON condition_events (fired_at DESC);
 PRAGMA user_version = {SCHEMA_VERSION};
 """
 
@@ -129,13 +151,35 @@ class RunRecord:
 
 @dataclass(frozen=True)
 class RegisteredSource:
-    """One explicitly registered fixture-backed source and its check interval."""
+    """A feed or metadata-only target in the single canonical source registry."""
 
     source_id: int
     name: str
     fixture_source: str
     interval_s: int
     enabled: bool
+    kind: str = "feed"
+    target: str = ""
+    tags: str = ""
+
+
+@dataclass(frozen=True)
+class ConditionCheck:
+    check_id: int
+    source_id: int
+    name: str
+    condition: str
+    severity: str
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class ConditionEvent:
+    event_id: int
+    check_id: int
+    fired_at: str
+    detail: str
+    resolved: bool
 
 
 @dataclass(frozen=True)
@@ -260,6 +304,12 @@ class StateStore:
         if columns and "metadata_json" not in columns:
             with self.conn:
                 self.conn.execute("ALTER TABLE articles ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+        source_columns = {row[1] for row in self.conn.execute("PRAGMA table_info(sources)")}
+        if source_columns:
+            with self.conn:
+                for column, default in (("kind", "feed"), ("target", ""), ("tags", "")):
+                    if column not in source_columns:
+                        self.conn.execute(f"ALTER TABLE sources ADD COLUMN {column} TEXT NOT NULL DEFAULT '{default}'")
         self.conn.executescript(_DDL)
         self.conn.commit()
 
@@ -350,6 +400,9 @@ class StateStore:
             raise ValueError("fixture_source must not be empty")
         if interval_s <= 0:
             raise ValueError("interval_s must be positive")
+        existing = self.conn.execute("SELECT kind FROM sources WHERE name = ?", (source_name,)).fetchone()
+        if existing is not None and existing["kind"] != "feed":
+            raise ValueError("source name belongs to a metadata-only target")
         with self._transaction() as cursor:
             cursor.execute(
                 """
@@ -371,7 +424,9 @@ class StateStore:
     def list_sources(self, *, enabled_only: bool = False) -> list[RegisteredSource]:
         """Return the source registry in stable name order."""
 
-        query = "SELECT id, name, fixture_source, interval_s, enabled FROM sources"
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(sources)")}
+        metadata = "kind, target, tags" if "kind" in columns else "'feed' AS kind, '' AS target, '' AS tags"
+        query = f"SELECT id, name, fixture_source, interval_s, enabled, {metadata} FROM sources"
         if enabled_only:
             query += " WHERE enabled = 1"
         query += " ORDER BY name"
@@ -382,9 +437,80 @@ class StateStore:
                 fixture_source=row["fixture_source"],
                 interval_s=row["interval_s"],
                 enabled=bool(row["enabled"]),
+                kind=row["kind"], target=row["target"], tags=row["tags"],
             )
             for row in self.conn.execute(query).fetchall()
         ]
+
+    def add_source(self, name: str, kind: str, target: str, interval_s: int = 60,
+                   *, enabled: bool = True, tags: str = "") -> int:
+        """Retain an archived http/file/cmd definition without executing its target."""
+        if kind not in {"http", "file", "cmd"}:
+            raise ValueError("source kind must be http, file or cmd")
+        if not name.strip() or not target.strip() or interval_s <= 0:
+            raise ValueError("source name/target must be non-empty and interval positive")
+        with self._transaction() as cursor:
+            cursor.execute(
+                "INSERT INTO sources (name, fixture_source, interval_s, enabled, kind, target, tags) VALUES (?, '', ?, ?, ?, ?, ?)",
+                (name.strip(), interval_s, int(enabled), kind, target, tags),
+            )
+            return int(cursor.lastrowid)
+
+    def add_check(self, source_id: int, name: str, condition: str, severity: str = "warning",
+                  *, enabled: bool = True) -> int:
+        """Store a condition as text. No condition evaluator is implied."""
+        if not name.strip() or not condition.strip():
+            raise ValueError("check name and condition must not be empty")
+        if severity not in {"info", "warning", "critical"}:
+            raise ValueError("invalid check severity")
+        with self._transaction() as cursor:
+            cursor.execute(
+                "INSERT INTO condition_checks (source_id, name, condition, severity, enabled) VALUES (?, ?, ?, ?, ?)",
+                (source_id, name, condition, severity, int(enabled)),
+            )
+            return int(cursor.lastrowid)
+
+    def list_checks(self, source_id: int | None = None) -> list[ConditionCheck]:
+        query = "SELECT * FROM condition_checks"
+        parameters = ()
+        if source_id is not None:
+            query += " WHERE source_id = ?"
+            parameters = (source_id,)
+        return [ConditionCheck(row["id"], row["source_id"], row["name"], row["condition"],
+                               row["severity"], bool(row["enabled"]))
+                for row in self.conn.execute(query + " ORDER BY id", parameters)]
+
+    def record_event(self, check_id: int, fired_at: str, detail: str = "", *, resolved: bool = False) -> int:
+        """Record a supplied condition event, independently of article alert firing."""
+        datetime.fromisoformat(fired_at.replace("Z", "+00:00"))
+        with self._transaction() as cursor:
+            cursor.execute(
+                "INSERT INTO condition_events (check_id, fired_at, detail, resolved) VALUES (?, ?, ?, ?)",
+                (check_id, fired_at, detail, int(resolved)),
+            )
+            return int(cursor.lastrowid)
+
+    def list_events(self, check_id: int | None = None, *, unresolved_only: bool = False,
+                    limit: int = 100) -> list[ConditionEvent]:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        clauses, parameters = [], []
+        if check_id is not None:
+            clauses.append("check_id = ?")
+            parameters.append(check_id)
+        if unresolved_only:
+            clauses.append("resolved = 0")
+        query = "SELECT * FROM condition_events"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        parameters.append(limit)
+        return [ConditionEvent(row["id"], row["check_id"], row["fired_at"], row["detail"], bool(row["resolved"]))
+                for row in self.conn.execute(query + " ORDER BY fired_at DESC, id DESC LIMIT ?", parameters)]
+
+    def resolve_event(self, event_id: int) -> bool:
+        with self._transaction() as cursor:
+            cursor.execute("UPDATE condition_events SET resolved = 1 WHERE id = ? AND resolved = 0", (event_id,))
+            return cursor.rowcount == 1
 
     def due_sources(self, *, now: float) -> list[DueSource]:
         """Return enabled sources due at ``now`` from completed run state."""
@@ -400,7 +526,7 @@ class StateStore:
                 MAX(ir.finished_at) AS last_finished_at
             FROM sources s
             LEFT JOIN ingest_runs ir ON ir.source = s.name
-            WHERE s.enabled = 1
+            WHERE s.enabled = 1 AND s.fixture_source IN ('hackernews', 'github_trending', 'rss')
             GROUP BY s.id
             HAVING last_finished_at IS NULL
                 OR last_finished_at + s.interval_s <= ?
