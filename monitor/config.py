@@ -37,17 +37,26 @@ def load_config(path: str | Path | None = None) -> Config:
             raise ValueError("configuration must be an object")
     else:
         parser = configparser.ConfigParser(interpolation=None)
-        parser.read_string(text)
+        try:
+            parser.read_string(text)
+        except configparser.Error as exc:
+            raise ValueError(f"malformed INI configuration: {exc}") from exc
         values = {
             "db_path": parser.get("database", "path", fallback=None),
-            "poll_interval_s": parser.getint("monitor", "poll_interval_s", fallback=30),
+            "poll_interval_s": parser.get("monitor", "poll_interval_s", fallback="30"),
             "log_level": parser.get("monitor", "log_level", fallback="INFO"),
             "sources": _split_sources(parser.get("monitor", "sources", fallback="")),
             "alert_threshold": parser.getfloat("monitor", "alert_threshold", fallback=0.7),
             "alert_log": parser.get("alerts", "log", fallback=None),
             "llm_endpoint": parser.get("llm", "endpoint", fallback=None),
         }
-    interval = int(values.get("poll_interval_s", values.get("interval", 30)))
+    try:
+        interval = int(values.get("poll_interval_s", values.get("interval", 30)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "poll_interval_s must be an integer, got "
+            f"{values.get('poll_interval_s', values.get('interval'))!r}"
+        ) from exc
     if interval <= 0:
         raise ValueError("poll interval must be positive")
     raw_sources = values.get("sources", [])
