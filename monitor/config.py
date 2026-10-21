@@ -19,6 +19,12 @@ class Config:
     llm_endpoint: str | None = None
 
 
+def _split_sources(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 def load_config(path: str | Path | None = None) -> Config:
     """Load explicit configuration without silently selecting a writable database."""
     if path is None:
@@ -34,8 +40,12 @@ def load_config(path: str | Path | None = None) -> Config:
         parser.read_string(text)
         values = {
             "db_path": parser.get("database", "path", fallback=None),
-            "poll_interval_s": parser.get("monitor", "poll_interval_s", fallback="30"),
+            "poll_interval_s": parser.getint("monitor", "poll_interval_s", fallback=30),
             "log_level": parser.get("monitor", "log_level", fallback="INFO"),
+            "sources": _split_sources(parser.get("monitor", "sources", fallback="")),
+            "alert_threshold": parser.getfloat("monitor", "alert_threshold", fallback=0.7),
+            "alert_log": parser.get("alerts", "log", fallback=None),
+            "llm_endpoint": parser.get("llm", "endpoint", fallback=None),
         }
     interval = int(values.get("poll_interval_s", values.get("interval", 30)))
     if interval <= 0:
@@ -44,9 +54,15 @@ def load_config(path: str | Path | None = None) -> Config:
     if not isinstance(raw_sources, list) or not all(isinstance(s, str) for s in raw_sources):
         raise ValueError("sources must be a list of source names")
     aliases = {"hn": "hackernews", "github": "github_trending"}
-    sources = tuple(dict.fromkeys(aliases.get(s, s) for s in raw_sources))
-    if set(sources) - {"hackernews", "github_trending", "rss"}:
-        raise ValueError("unknown configured source")
+    sources = tuple(
+        dict.fromkeys(aliases.get(s.casefold(), s.casefold()) for s in raw_sources)
+    )
+    installed_parsers = {"hackernews", "github_trending", "rss"}
+    unknown_sources = {s for s in sources if s not in installed_parsers}
+    if unknown_sources:
+        raise ValueError(
+            f"unknown configured source: {', '.join(sorted(unknown_sources))}"
+        )
     threshold = float(values.get("alert_threshold", 0.7))
     if not 0 <= threshold <= 1:
         raise ValueError("legacy alert_threshold must be in [0, 1]")

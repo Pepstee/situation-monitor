@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import socket
+import subprocess
+import sys
 import urllib.request
+from pathlib import Path
 
 import pytest
 
+import monitor
 from monitor.cli import main
 from monitor.storage import StateStore
 
@@ -380,3 +385,62 @@ def test_valid_empty_event_stream_remains_successful(tmp_path, capsys):
     path.write_text("[]")
     assert main(["summary", str(path)]) == 0
     assert capsys.readouterr().out == "No events detected.\n"
+
+
+def test_dashboard_cli_reports_independent_per_source_last_statuses(tmp_path):
+    def build_state(seed_success_last: bool) -> Path:
+        suffix = "ok_last" if seed_success_last else "fail_last"
+        state_path = tmp_path / f"state_{suffix}.sqlite3"
+        with StateStore(state_path) as store:
+            store.register_source("ok_src", "rss", 1)
+            store.register_source("bad_src", "rss", 1)
+            store.register_source("idle_src", "rss", 1)
+            if seed_success_last:
+                store.record_run("ok_src", 10, 11)
+                store.record_run("bad_src", 12, 13, error="boom")
+            else:
+                store.record_run("bad_src", 12, 13, error="boom")
+                store.record_run("ok_src", 10, 11)
+        # Exiting the context manager closes the SQLite database before launch.
+        return state_path
+
+    project_root = Path(monitor.__file__).resolve().parent.parent
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(project_root), environment.get("PYTHONPATH", "")]
+    )
+
+    def statuses(state_path: Path) -> dict[str, object]:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "monitor.cli",
+                "dashboard",
+                "--state",
+                str(state_path),
+                "--at",
+                "100",
+            ],
+            capture_output=True,
+            text=True,
+            env=environment,
+            cwd=str(project_root),
+            check=True,
+        )
+        snapshot = json.loads(completed.stdout)
+        return {
+            item["name"]: item["last_status"]
+            for item in snapshot["sources"]["items"]
+        }
+
+    assert statuses(build_state(seed_success_last=True)) == {
+        "ok_src": "succeeded",
+        "bad_src": "failed",
+        "idle_src": None,
+    }
+    assert statuses(build_state(seed_success_last=False)) == {
+        "ok_src": "succeeded",
+        "bad_src": "failed",
+        "idle_src": None,
+    }

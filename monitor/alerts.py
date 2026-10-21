@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, TextIO
+from typing import Any, Callable, Iterable, Mapping, Sequence, TextIO
 
 from .storage import AlertEvent
 
@@ -27,7 +28,7 @@ def _validate_score(value: float) -> None:
 
 @dataclass
 class AlertRule:
-    """Inclusive 0–100 threshold with deduplication after callback success only."""
+    """Inclusive 0-100 threshold with deduplication after callback success only."""
 
     name: str
     threshold: float
@@ -36,7 +37,7 @@ class AlertRule:
     _fired_ids: set[object] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name.strip():
+        if not isinstance(self.name, str) or self.name.strip() == "":
             raise ValueError("rule name must not be empty")
         _validate_score(self.threshold)
         if not callable(self.on_alert):
@@ -92,84 +93,180 @@ class AlertManager:
             rule.reset()
 
 
-class TextAlertDelivery:
-    """Deliver persisted events to a JSONL log and a text stream.
+_ALERT_EVENT_FIELDS = frozenset(field.name for field in fields(AlertEvent))
 
-    The append-only JSONL file is the durable delivery receipt. Existing complete
-    records are validated on construction and their IDs are not emitted again.
-    A malformed or truncated log fails visibly, never silently discarding it.
-    With no log, deduplication is process-local and restarts may repeat stderr.
-    One writer owns the log. This sink does not resolve StateStore events.
+
+def _receipt_identity(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Comparable firing identity: every persisted field except resolution."""
+
+    return {key: value for key, value in receipt.items() if key != "resolved"}
+
+
+class TextAlertDelivery:
+    """Deliver one alert firing as a staged JSON-lines receipt commit.
+
+    Consolidated contract covering ordering, retry, and deduplication:
+
+    - Ordering: open the receipt log, write and flush stderr, append the
+      receipt, close the receipt log, then update in-memory delivery state.
+      In-memory state is never advanced outside the receipt stream's full
+      completion boundary, so an incomplete delivery is never committed.
+    - Retry: a stderr write or flush failure appends no receipt (the staged
+      log is closed empty) and raises, leaving the persisted SQLite firing
+      unresolved so the watch loop retries it on the next evaluation.
+    - Deduplication: an already-delivered firing returns False without
+      touching stderr or the receipt log; a conflicting receipt identity for
+      the same alert id raises instead of double-committing.
     """
 
-    def __init__(self, log_path: str | Path | None = None, *, stream: TextIO | None = None) -> None:
-        self.log_path = Path(log_path) if log_path is not None else None
+    def __init__(self, receipt_path: str | Path | None = None, *, stream: TextIO | None = None) -> None:
+        if receipt_path is not None and not str(receipt_path).strip():
+            raise ValueError("receipt path must not be empty")
+        # None means "the process stderr at delivery time", so the default
+        # watch path honours stderr redirection that happens after
+        # construction and propagates its write/flush failures.
         self.stream = stream
-        self._logged: dict[int, dict[str, Any]] = {}
-        self._emitted: set[int] = set()
-        if self.log_path is not None and self.log_path.exists():
-            with self.log_path.open(encoding="utf-8") as source:
-                for line_number, line in enumerate(source, 1):
-                    try:
-                        if not line.endswith("\n"):
-                            raise ValueError("incomplete line")
-                        record = json.loads(line)
-                        self._validate_record(record)
-                        previous = self._logged.get(record["alert_id"])
-                        if previous is not None and previous != record:
-                            raise ValueError("conflicting alert ID")
-                    except (ValueError, TypeError, KeyError) as exc:
-                        raise ValueError(f"invalid alert log line {line_number}: {exc}") from exc
-                    self._logged[record["alert_id"]] = record
-                    self._emitted.add(record["alert_id"])
+        self._receipt_path = None if receipt_path is None else Path(receipt_path)
+        self._receipts: dict[int, dict[str, Any]] = {}
+        if self._receipt_path is not None:
+            self._load_existing_receipts()
 
-    @staticmethod
-    def _validate_record(record: Any) -> None:
-        if not isinstance(record, dict) or set(record) != {item.name for item in fields(AlertEvent)}:
-            raise ValueError("expected complete AlertEvent fields")
-        for key in ("alert_id", "threshold", "score"):
-            if type(record[key]) is not int:
-                raise ValueError(f"{key} must be an integer")
-        if record["alert_id"] <= 0:
-            raise ValueError("alert_id must be positive")
-        _validate_score(record["score"])
-        _validate_score(record["threshold"])
-        if isinstance(record["fired_at"], bool) or not isinstance(record["fired_at"], (int, float)) or not math.isfinite(record["fired_at"]):
-            raise ValueError("fired_at must be finite")
-        if type(record["resolved"]) is not bool:
-            raise ValueError("resolved must be boolean")
-        for key in ("rule_name", "severity", "fingerprint", "url", "title", "source"):
-            if not isinstance(record[key], str):
-                raise ValueError(f"{key} must be a string")
+    def _load_existing_receipts(self) -> None:
+        assert self._receipt_path is not None
+        if not self._receipt_path.exists():
+            return
+        text = self._receipt_path.read_text(encoding="utf-8")
+        if text and not text.endswith("\n"):
+            raise ValueError(f"incomplete receipt line at end of {self._receipt_path}")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                receipt = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"incomplete receipt line in {self._receipt_path}") from exc
+            if not isinstance(receipt, dict) or not _ALERT_EVENT_FIELDS <= set(receipt):
+                raise ValueError(f"incomplete receipt line in {self._receipt_path}")
+            alert_id = receipt["alert_id"]
+            if not isinstance(alert_id, int) or isinstance(alert_id, bool):
+                raise ValueError(f"incomplete receipt line in {self._receipt_path}")
+            existing = self._receipts.get(alert_id)
+            if existing is not None and _receipt_identity(existing) != _receipt_identity(receipt):
+                raise ValueError(f"conflicting receipts for alert id {alert_id} in {self._receipt_path}")
+            self._receipts[alert_id] = dict(receipt)
+
+    def _stderr_message(self, event: AlertEvent) -> str:
+        return (
+            f"[ALERT] id={event.alert_id} severity={event.severity} "
+            f"rule={event.rule_name!r} title={event.title!r} "
+            f"url={event.url!r} source={event.source!r} "
+            f"score={event.score:.2f} threshold={event.threshold:.2f}\n"
+        )
+
+    def _deliver_stderr(self, message: str) -> None:
+        """Write and fully flush one stderr alert line, raising on any failure."""
+
+        stream = sys.stderr if self.stream is None else self.stream
+        if stream.write(message) != len(message):
+            raise OSError("short write to alert stderr stream")
+        stream.flush()
+
+    def _commit_receipt_into(self, log_file: TextIO, line: str) -> None:
+        """Append one complete receipt line and close the staged log.
+
+        Any write or flush failure rolls the log back to its pre-commit size
+        before closing, so no partial receipt is ever left persisted. On
+        success the staged handle is closed exactly once, completing the
+        commit boundary; a failed close means the receipt was not durably
+        committed and the exception propagates so the firing stays retryable.
+        """
+
+        # O_APPEND positions the fd at 0 until the first write on some
+        # platforms, so stage the rollback offset from the file's real
+        # size; otherwise a failure could truncate prior receipts.
+        committed_at = os.fstat(log_file.fileno()).st_size
+        try:
+            log_file.write(line + "\n")
+            log_file.flush()
+        except BaseException:
+            try:
+                log_file.truncate(committed_at)
+            except (OSError, ValueError):
+                pass
+            try:
+                log_file.close()
+            except (OSError, ValueError):
+                pass
+            raise
+        # Stage 4 of the commit boundary: only a successful close completes
+        # the receipt commit. Surface a close failure instead of swallowing
+        # it so in-memory delivery state is never advanced for an
+        # incompletely persisted receipt.
+        log_file.close()
+
+    def _discard_empty_staged_log(self, log_file: TextIO) -> None:
+        """Abort a staged delivery whose stderr step failed.
+
+        The staged log received no receipt, so closing it leaves an empty
+        file; an empty staged log is removed so no stray artifact survives
+        a retryable failure. The original delivery exception is never
+        masked by cleanup, and in-memory delivery state is untouched.
+        """
+
+        try:
+            empty = os.fstat(log_file.fileno()).st_size == 0
+        except (OSError, ValueError):
+            empty = False
+        try:
+            log_file.close()
+        except (OSError, ValueError):
+            pass
+        if empty and self._receipt_path is not None:
+            try:
+                self._receipt_path.unlink()
+            except OSError:
+                pass
 
     def __call__(self, event: AlertEvent) -> bool:
-        """Return true for newly emitted output, false when already delivered.
-
-        Output errors propagate. A file write followed by a stream failure may
-        leave a durable log receipt. In-process retry then retries the stream
-        only. On restart, the complete log receipt prevents duplicate emission.
-        """
-        record = asdict(event)
-        self._validate_record(record)
-        previous = self._logged.get(event.alert_id)
-        if previous is not None:
-            # Resolution is a lifecycle change, not a different firing.
-            if {k: v for k, v in previous.items() if k != "resolved"} != {k: v for k, v in record.items() if k != "resolved"}:
-                raise ValueError(f"conflicting alert ID: {event.alert_id}")
-        if event.alert_id in self._emitted:
+        receipt = asdict(event)
+        alert_id = receipt["alert_id"]
+        existing = self._receipts.get(alert_id)
+        if existing is not None:
+            if _receipt_identity(existing) != _receipt_identity(receipt):
+                raise ValueError(f"conflicting receipt for alert id {alert_id}")
             return False
-        if self.log_path is not None and previous is None:
-            line = json.dumps(record, sort_keys=True, allow_nan=False) + "\n"
-            with self.log_path.open("a", encoding="utf-8") as target:
-                if target.write(line) != len(line):
-                    raise OSError("incomplete alert log write")
-            self._logged[event.alert_id] = record
-        line = (f"[ALERT] id={event.alert_id} rule={event.rule_name!r} "
-                f"severity={event.severity!r} score={event.score:.2f} "
-                f"title={event.title!r} url={event.url!r}\n")
-        target = self.stream if self.stream is not None else sys.stderr
-        if target.write(line) != len(line):
-            raise OSError("incomplete alert stream write")
-        target.flush()
-        self._emitted.add(event.alert_id)
+        line = json.dumps(receipt, ensure_ascii=False, sort_keys=True)
+        # Strict delivery ordering: (1) open the receipt log, (2) write and
+        # flush stderr, (3) append the receipt, (4) close the receipt log,
+        # and only then (5) advance in-memory delivery state. A stderr write
+        # or flush failure aborts while the staged log is still empty and is
+        # closed before the exception propagates, so no receipt is appended
+        # and the persisted SQLite firing stays unresolved and retryable on a
+        # later watch evaluation. In-memory state is never advanced outside
+        # the receipt stream's full completion boundary.
+        if self._receipt_path is None:
+            self._deliver_stderr(self._stderr_message(event))
+        else:
+            assert self._receipt_path is not None
+            log_file = self._receipt_path.open("a", encoding="utf-8")
+            try:
+                # Stage 2 happens strictly inside the open receipt-log
+                # boundary while the log is still empty; failure here leaves
+                # the log empty and the firing retryable.
+                self._deliver_stderr(self._stderr_message(event))
+                # Stages 3 and 4: append the complete receipt and close the
+                # log before any state is acknowledged.
+                self._commit_receipt_into(log_file, line)
+            except BaseException:
+                # Abort without a receipt: close (and, if still empty,
+                # remove) the staged log, preserve the original delivery
+                # exception, and leave in-memory state unadvanced so the
+                # persisted SQLite firing stays retryable.
+                self._discard_empty_staged_log(log_file)
+                raise
+        self._receipts[alert_id] = receipt
         return True
+
+    def reset(self) -> None:
+        self._receipts.clear()

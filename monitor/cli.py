@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from monitor.analysis import analyze_articles, build_digest, HTTPScorer, score_article, cluster_scored_articles, generate_digest
+from monitor.alerts import TextAlertDelivery
 from monitor.ingest import article_record, fetch_fixture_articles, load_events
 from monitor.ingest import fetch_live_articles
 from monitor.scheduler import SourceCheckResult, run_due_source_checks
@@ -384,8 +385,11 @@ def _run_watch(arguments) -> int:
     threshold = arguments.alert_threshold if arguments.alert_threshold is not None else math.ceil(config.alert_threshold * 100)
     if not 0 <= threshold <= 100:
         raise ValueError("alert threshold must be in [0, 100]")
-    from monitor.alerts import TextAlertDelivery
-    delivery = TextAlertDelivery(arguments.alert_log or config.alert_log)
+    alert_log = arguments.alert_log or config.alert_log
+    if alert_log is None:
+        state_file = Path(state_path)
+        alert_log = str(state_file.with_name(state_file.name + ".alerts.jsonl"))
+    delivery = TextAlertDelivery(alert_log)
     collected = []
     source_collect = collect
     def collect(source):
@@ -421,13 +425,30 @@ def _run_watch(arguments) -> int:
                 failed = failed or bool(scoring_errors)
                 created = store.evaluate_alert_rule("watch-high-score", threshold, fired_at=checked_at)
                 delivery_errors = []
-                for event in store.list_alert_events(unresolved_only=True, limit=1_000_000):
+                # Deliver in firing order (oldest first): list_alert_events
+                # returns newest-first, so receipts would otherwise be
+                # appended out of order across retry cycles.
+                pending = sorted(
+                    store.list_alert_events(unresolved_only=True, limit=1_000_000),
+                    key=lambda event: event.alert_id,
+                )
+                for event in pending:
                     if event.rule_name != "watch-high-score":
                         continue
                     try:
+                        # Default delivery path: TextAlertDelivery.__call__
+                        # owns the staged open -> stderr -> append -> close ->
+                        # state-update commit boundary.
                         delivery(event)
-                    except (OSError, ValueError) as exc:
+                    except Exception as exc:
+                        # Any stderr write/flush or receipt failure keeps the
+                        # persisted firing unresolved so it is retried later.
                         delivery_errors.append({"alert_id": event.alert_id, "error": str(exc)})
+                    else:
+                        # The receipt commit completed (or a prior receipt
+                        # already covers this firing), so retire it from the
+                        # retryable unresolved set only now.
+                        store.resolve_alert_event(event.alert_id)
                 failed = failed or bool(delivery_errors)
                 print(json.dumps({
                     "mode": "live-watch" if arguments.live else "fixture-watch",
@@ -535,7 +556,12 @@ def dashboard_snapshot(
 
     last_runs: dict[str, RunRecord] = {}
     for run in runs:
-        last_runs.setdefault(run.source, run)
+        current = last_runs.get(run.source)
+        if (
+            current is None
+            or (run.finished_at, run.run_id) > (current.finished_at, current.run_id)
+        ):
+            last_runs[run.source] = run
     source_records: list[dict[str, object]] = []
     for source in sources:
         last_run = last_runs.get(source.name)
@@ -679,7 +705,7 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.command == "watch":
         try:
             return _run_watch(arguments)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
             print(f"Watch failed: {exc}", file=sys.stderr)
             return 1
     if arguments.command == "fetch":

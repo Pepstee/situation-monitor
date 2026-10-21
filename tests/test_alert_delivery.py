@@ -1,5 +1,6 @@
 import io
 import json
+import pathlib
 from dataclasses import asdict, replace
 
 import pytest
@@ -120,3 +121,92 @@ def test_log_validation_conflicts_and_stream_retry(tmp_path):
     assert sink(event()) is True
     assert len(retry_path.read_text().splitlines()) == 1
     assert "id=7" in sink.stream.getvalue()
+
+
+def test_production_delivery_sequence_is_open_stderr_append_close_then_state(
+    tmp_path, monkeypatch
+):
+    """Receipt-log open -> stderr write+flush -> append+flush+close -> state update."""
+
+    events = []
+    real_open = pathlib.Path.open
+    delivery_holder = {}
+
+    class RecordingReceiptFile:
+        """Real append-mode file with ordered-event recording (fileno works)."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def write(self, text):
+            events.append("receipt-append")
+            return self._inner.write(text)
+
+        def flush(self):
+            events.append("receipt-flush")
+            return self._inner.flush()
+
+        def close(self):
+            # In-memory delivery state must still be unadvanced at close time.
+            assert delivery_holder["delivery"]._receipts == {}
+            events.append("receipt-close")
+            return self._inner.close()
+
+        def fileno(self):
+            return self._inner.fileno()
+
+        def truncate(self, *args):
+            return self._inner.truncate(*args)
+
+    def fake_open(self, mode="r", *args, **kwargs):
+        assert mode == "a"
+        events.append("receipt-open")
+        return RecordingReceiptFile(real_open(self, mode, *args, **kwargs))
+
+    class OrderedStderr(io.StringIO):
+        def write(self, text):
+            events.append("stderr-write")
+            return super().write(text)
+
+        def flush(self):
+            events.append("stderr-flush")
+            return super().flush()
+
+    monkeypatch.setattr(pathlib.Path, "open", fake_open)
+    receipt_path = tmp_path / "alerts.jsonl"
+    delivery = TextAlertDelivery(receipt_path, stream=OrderedStderr())
+    delivery_holder["delivery"] = delivery
+
+    assert delivery(event()) is True
+    assert events == [
+        "receipt-open",
+        "stderr-write",
+        "stderr-flush",
+        "receipt-append",
+        "receipt-flush",
+        "receipt-close",
+    ]
+    # The in-memory state update is the final step, after the log is closed.
+    assert delivery._receipts and delivery(event()) is False
+
+    # A stderr write failure inside the open boundary leaves no receipt behind.
+    class BrokenWrite(io.StringIO):
+        def write(self, text):
+            events.append("stderr-write")
+            raise OSError("stderr stream gone")
+
+    events.clear()
+    broken = TextAlertDelivery(tmp_path / "broken.jsonl", stream=BrokenWrite())
+    delivery_holder["delivery"] = broken
+    with pytest.raises(OSError, match="stderr stream gone"):
+        broken(event())
+    assert events == ["receipt-open", "stderr-write", "receipt-close"]
+    assert broken._receipts == {}
+    # Restore the real Path.open before reading the receipt log below:
+    # open("a") creates the staged file, and Path.read_text internally
+    # calls open(mode="r"), which would trip the recording fake's
+    # append-only mode assertion.
+    monkeypatch.setattr(pathlib.Path, "open", real_open)
+    assert not (tmp_path / "broken.jsonl").exists() or (
+        tmp_path / "broken.jsonl"
+    ).read_text(encoding="utf-8") == ""

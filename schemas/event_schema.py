@@ -75,7 +75,7 @@ class Event:
         Raises:
             ValueError: If severity is not one of the valid levels.
         """
-        if self.severity not in self.VALID_SEVERITIES:
+        if not isinstance(self.severity, str) or self.severity not in self.VALID_SEVERITIES:
             raise ValueError(
                 f"Invalid severity '{self.severity}'. "
                 f"Must be one of: {', '.join(sorted(self.VALID_SEVERITIES))}"
