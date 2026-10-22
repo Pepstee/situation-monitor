@@ -376,10 +376,6 @@ def _run_watch(arguments) -> int:
         raise ValueError("unknown configured log level")
     logging.basicConfig(level=config.log_level)
     names = [("live:" if arguments.live else "") + source for source in sources]
-    def collect(source):
-        if arguments.live:
-            return fetch_live_articles([source], rss_urls=arguments.rss_url)
-        return fetch_fixture_articles(arguments.fixture_dir, [source])
     model_endpoint = arguments.model_endpoint or config.llm_endpoint
     scorer = HTTPScorer(model_endpoint) if model_endpoint else score_article
     threshold = arguments.alert_threshold if arguments.alert_threshold is not None else math.ceil(config.alert_threshold * 100)
@@ -391,9 +387,12 @@ def _run_watch(arguments) -> int:
         alert_log = str(state_file.with_name(state_file.name + ".alerts.jsonl"))
     delivery = TextAlertDelivery(alert_log)
     collected = []
-    source_collect = collect
     def collect(source):
-        articles = store.filter_unseen(source_collect(source), scored_only=True)
+        if arguments.live:
+            articles = fetch_live_articles([source], rss_urls=arguments.rss_url)
+        else:
+            articles = fetch_fixture_articles(arguments.fixture_dir, [source])
+        articles = store.filter_unseen(articles, scored_only=True)
         collected.extend(articles)
         return articles
     failed = False
@@ -425,30 +424,41 @@ def _run_watch(arguments) -> int:
                 failed = failed or bool(scoring_errors)
                 created = store.evaluate_alert_rule("watch-high-score", threshold, fired_at=checked_at)
                 delivery_errors = []
-                # Deliver in firing order (oldest first): list_alert_events
-                # returns newest-first, so receipts would otherwise be
-                # appended out of order across retry cycles.
-                pending = sorted(
-                    store.list_alert_events(unresolved_only=True, limit=1_000_000),
-                    key=lambda event: event.alert_id,
-                )
-                for event in pending:
-                    if event.rule_name != "watch-high-score":
-                        continue
-                    try:
-                        # Default delivery path: TextAlertDelivery.__call__
-                        # owns the staged open -> stderr -> append -> close ->
-                        # state-update commit boundary.
-                        delivery(event)
-                    except Exception as exc:
-                        # Any stderr write/flush or receipt failure keeps the
-                        # persisted firing unresolved so it is retried later.
-                        delivery_errors.append({"alert_id": event.alert_id, "error": str(exc)})
-                    else:
-                        # The receipt commit completed (or a prior receipt
-                        # already covers this firing), so retire it from the
-                        # retryable unresolved set only now.
-                        store.resolve_alert_event(event.alert_id)
+                # Receipt-aware bounded draining: page through unresolved
+                # watch-high-score firings with a restart-safe alert-id
+                # cursor, in oldest-first firing order so receipts are
+                # appended in order across retry cycles. Already-receipted
+                # but unresolved firings are skipped by delivery and cannot
+                # occupy the bounded page window: the cursor keeps advancing
+                # until every unreceipted matching firing has been selected.
+                # The rule filter is applied inside the SQL query itself, so
+                # unrelated-rule firings never crowd out the window either.
+                drain_cursor = 0
+                while True:
+                    page = store.list_alert_events(
+                        unresolved_only=True,
+                        rule_name="watch-high-score",
+                        after_alert_id=drain_cursor,
+                    )
+                    if not page:
+                        break
+                    drain_cursor = page[-1].alert_id
+                    for event in page:
+                        try:
+                            # Default delivery path: TextAlertDelivery.__call__
+                            # owns the staged open -> stderr -> append -> close ->
+                            # state-update commit boundary. Durable receipts
+                            # suppress redelivery, so delivery stays distinct
+                            # from resolution and no firing is auto-resolved
+                            # here; resolution remains an explicit operator
+                            # action.
+                            delivery(event)
+                        except Exception as exc:
+                            # Any stderr write/flush or receipt failure keeps the
+                            # persisted firing unresolved so it is retried later.
+                            delivery_errors.append({"alert_id": event.alert_id, "error": str(exc)})
+                    if len(page) < 100:
+                        break
                 failed = failed or bool(delivery_errors)
                 print(json.dumps({
                     "mode": "live-watch" if arguments.live else "fixture-watch",

@@ -903,21 +903,45 @@ class StateStore:
         *,
         unresolved_only: bool = False,
         limit: int = 100,
+        rule_name: str | None = None,
+        after_alert_id: int | None = None,
     ) -> list[AlertEvent]:
-        """Return persisted alert events newest-first with an optional open filter."""
+        """Return persisted alert events newest-first with optional open/rule filters.
+
+        ``after_alert_id`` enables restart-safe bounded pagination in oldest-first
+        alert-id order: each page returns at most ``limit`` matching rows whose id
+        exceeds the cursor, so draining callers can advance past already-handled
+        firings without letting any matching row be permanently skipped.
+        """
 
         if limit <= 0:
             raise ValueError("limit must be positive")
+        if after_alert_id is not None and after_alert_id < 0:
+            raise ValueError("after_alert_id must not be negative")
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if unresolved_only:
+            clauses.append("resolved = 0")
+        if rule_name is not None:
+            clauses.append("rule_name = ?")
+            parameters.append(rule_name)
+        if after_alert_id is not None:
+            clauses.append("id > ?")
+            parameters.append(after_alert_id)
         query = (
             "SELECT id, rule_name, threshold, severity, fingerprint, url, title, "
             "source, score, fired_at, resolved FROM alert_events"
         )
-        if unresolved_only:
-            query += " WHERE resolved = 0"
-        query += " ORDER BY fired_at DESC, id DESC LIMIT ?"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        if after_alert_id is None:
+            query += " ORDER BY fired_at DESC, id DESC LIMIT ?"
+        else:
+            query += " ORDER BY id ASC LIMIT ?"
+        parameters.append(limit)
         return [
             self._alert_event(row)
-            for row in self.conn.execute(query, (limit,)).fetchall()
+            for row in self.conn.execute(query, parameters).fetchall()
         ]
 
     def alert_event_counts(self) -> tuple[int, int]:

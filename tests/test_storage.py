@@ -393,3 +393,139 @@ def test_scored_only_dedup_retains_failed_scoring_for_retry(tmp_path):
         store.save_article(second, seen_at=100)
         assert store.filter_unseen([first, second], now=200, scored_only=True) == [second]
         assert store.filter_unseen([first, second], now=100000, scored_only=True) == [first, second]
+
+
+def test_small_limit_with_rule_name_filters_across_rules_newest_first(tmp_path):
+    """Focused small-N regression for rule_name filtering and the unfiltered default."""
+    with StateStore(tmp_path / 'state.sqlite3') as store:
+        store.save_article(
+            Article(url='https://example.com/low', title='Low', source='rss'),
+            seen_at=100.0,
+        )
+        store.save_article(
+            Article(url='https://example.com/high', title='High', source='rss'),
+            seen_at=101.0,
+        )
+        store.conn.execute(
+            "UPDATE articles SET score = 40 WHERE url = 'https://example.com/low'"
+        )
+        store.conn.execute(
+            "UPDATE articles SET score = 80 WHERE url = 'https://example.com/high'"
+        )
+        store.conn.commit()
+        rule_a = store.evaluate_alert_rule('rule-a', 30, fired_at=1_000.0)
+        rule_b = store.evaluate_alert_rule('rule-b', 60, fired_at=2_000.0)
+
+        # Small-N window without rule_name: mixed rules, strictly newest-first,
+        # not restricted to any single rule's firing set.
+        unfiltered = store.list_alert_events(limit=2)
+        assert len(unfiltered) == 2
+        assert unfiltered[0].rule_name == 'rule-b'
+        assert unfiltered[1].rule_name == 'rule-a'
+
+        # Small-N window with rule_name: restricted to that rule only, ordered
+        # newest-first within the rule, even when the limit is below the total.
+        only_a = store.list_alert_events(limit=1, rule_name='rule-a')
+        only_b = store.list_alert_events(limit=1, rule_name='rule-b')
+        newest_a = max(rule_a, key=lambda event: (event.fired_at, event.alert_id))
+        assert [event.alert_id for event in only_a] == [newest_a.alert_id]
+        assert [event.alert_id for event in only_b] == [
+            event.alert_id for event in rule_b
+        ]
+        assert all(event.rule_name == 'rule-a' for event in only_a)
+        assert all(event.rule_name == 'rule-b' for event in only_b)
+
+        # Omitting rule_name entirely must never leak a previous filter: every
+        # event across all rules remains visible.
+        everything = store.list_alert_events(limit=100)
+        assert {event.rule_name for event in everything} == {'rule-a', 'rule-b'}
+        assert len(everything) == 3
+
+
+def test_after_alert_id_cursor_pages_interleaved_rules_exactly_once(tmp_path):
+    """Bounded after_alert_id drain returns every rule match once, in order."""
+    with StateStore(tmp_path / 'state.sqlite3') as store:
+        rule_a_ids = []
+        all_ids = []
+        for index in range(9):
+            store.save_article(
+                Article(
+                    url=f'https://example.com/page/{index}',
+                    title=f'Page {index}',
+                    source='rss',
+                ),
+                seen_at=100.0 + index,
+            )
+            store.conn.execute(
+                'UPDATE articles SET score = ? WHERE url = ?',
+                (index + 1, f'https://example.com/page/{index}'),
+            )
+            store.conn.commit()
+            fired_a = store.evaluate_alert_rule(
+                'rule-a', index + 1, fired_at=1_000.0 + index
+            )
+            fired_b = store.evaluate_alert_rule(
+                'rule-b', index + 1, fired_at=1_000.0 + index
+            )
+            assert len(fired_a) == 1 and len(fired_b) == 1
+            rule_a_ids.append(fired_a[0].alert_id)
+            all_ids.extend([fired_a[0].alert_id, fired_b[0].alert_id])
+
+        # Bounded drain over one rule with interleaved unrelated rows: every
+        # matching id is returned exactly once, ascending, and each cursor
+        # advances strictly past the previously drained page.
+        cursors = [0]
+        drained = []
+        while True:
+            page = store.list_alert_events(
+                rule_name='rule-a', after_alert_id=cursors[-1], limit=3
+            )
+            if not page:
+                break
+            page_ids = [event.alert_id for event in page]
+            assert page_ids == sorted(page_ids)
+            assert all(alert_id > cursors[-1] for alert_id in page_ids)
+            assert all(event.rule_name == 'rule-a' for event in page)
+            drained.extend(page_ids)
+            cursors.append(page_ids[-1])
+        assert drained == sorted(rule_a_ids)
+        assert len(set(drained)) == len(rule_a_ids)
+        assert cursors == sorted(set(cursors))
+
+        # unresolved_only composes with the cursor and skips resolved rows only.
+        resolved_id = rule_a_ids[1]
+        assert store.resolve_alert_event(resolved_id) is True
+        cursors = [0]
+        open_drained = []
+        while True:
+            page = store.list_alert_events(
+                unresolved_only=True,
+                rule_name='rule-a',
+                after_alert_id=cursors[-1],
+                limit=4,
+            )
+            if not page:
+                break
+            open_drained.extend(event.alert_id for event in page)
+            cursors.append(page[-1].alert_id)
+        assert resolved_id not in open_drained
+        assert open_drained == sorted(set(rule_a_ids) - {resolved_id})
+
+        # An unfiltered cursor drain still crosses both interleaved rules
+        # without skipping or duplicating any row.
+        cursors = [0]
+        every_paged = []
+        while True:
+            page = store.list_alert_events(after_alert_id=cursors[-1], limit=5)
+            if not page:
+                break
+            every_paged.extend(event.alert_id for event in page)
+            cursors.append(page[-1].alert_id)
+        assert every_paged == sorted(all_ids)
+
+        # Default no-cursor behaviour is unchanged: newest-first across rules.
+        assert [
+            event.alert_id for event in store.list_alert_events(limit=100)
+        ] == sorted(all_ids, reverse=True)
+        with pytest.raises(ValueError, match='after_alert_id'):
+            store.list_alert_events(after_alert_id=-1)
