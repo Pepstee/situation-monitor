@@ -113,7 +113,19 @@ class TextAlertDelivery:
       completion boundary, so an incomplete delivery is never committed.
     - Retry: a stderr write or flush failure appends no receipt (the staged
       log is closed empty) and raises, leaving the persisted SQLite firing
-      unresolved so the watch loop retries it on the next evaluation.
+      unresolved so the watch loop retries it on the next evaluation. A
+      receipt append, flush or fsync failure after successful stderr
+      delivery is equally retryable: the appended line is rolled back so no
+      successful receipt is committed, in-memory delivery state stays
+      unadvanced, and the delivery error surfaces to the caller, which keeps
+      the persisted SQLite firing unresolved for a later evaluation. A close
+      failure after successful stderr delivery also surfaces and leaves the
+      firing retryable, but it does not roll the record back when the fsync
+      already succeeded: a valid durable receipt may remain in the log, and
+      a later attempt recovers it by revalidating the entire receipt log
+      (terminal newline, per-line schema, alert-id and duplicate-conflict
+      checks) and deduplicating on receipt identity, without re-emitting
+      stderr or appending a duplicate line.
     - Deduplication: an already-delivered firing returns False without
       touching stderr or the receipt log; a conflicting receipt identity for
       the same alert id raises instead of double-committing.
@@ -128,16 +140,34 @@ class TextAlertDelivery:
         self.stream = stream
         self._receipt_path = None if receipt_path is None else Path(receipt_path)
         self._receipts: dict[int, dict[str, Any]] = {}
+        # Set when a close error follows a successful fsync: the appended
+        # receipt may already be durable while in-memory state lags, so the
+        # next attempt must revalidate the whole log before deduplicating.
+        self._durable_unacknowledged = False
         if self._receipt_path is not None:
             self._load_existing_receipts()
 
     def _load_existing_receipts(self) -> None:
         assert self._receipt_path is not None
         if not self._receipt_path.exists():
+            # A missing log confirms zero receipts. This matters during a
+            # _durable_unacknowledged recovery after the log was rotated or
+            # removed: returning without clearing would keep stale cached
+            # entries alive, and cached dedup would then suppress redelivery
+            # of firings the revalidated (empty) log no longer confirms. An
+            # early return on a fresh __init__ is unaffected: _receipts is
+            # already empty there.
+            self._receipts.clear()
             return
         text = self._receipt_path.read_text(encoding="utf-8")
         if text and not text.endswith("\n"):
             raise ValueError(f"incomplete receipt line at end of {self._receipt_path}")
+        # Validate every line, including the terminal newline, JSON/object/
+        # required-field and alert-id checks plus duplicate-id conflict
+        # checks, into a staging mapping first: a malformed or conflicting
+        # later line must leave no partial parsed prefix cached in
+        # _receipts, so repeated retries stay fail-closed.
+        loaded: dict[int, dict[str, Any]] = {}
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped:
@@ -151,10 +181,18 @@ class TextAlertDelivery:
             alert_id = receipt["alert_id"]
             if not isinstance(alert_id, int) or isinstance(alert_id, bool):
                 raise ValueError(f"incomplete receipt line in {self._receipt_path}")
-            existing = self._receipts.get(alert_id)
+            existing = loaded.get(alert_id)
             if existing is not None and _receipt_identity(existing) != _receipt_identity(receipt):
                 raise ValueError(f"conflicting receipts for alert id {alert_id} in {self._receipt_path}")
-            self._receipts[alert_id] = dict(receipt)
+            loaded[alert_id] = dict(receipt)
+        # Replace the cache with exactly the revalidated set. During a
+        # _durable_unacknowledged recovery this matters: merging via update()
+        # would keep cached entries that the just-revalidated log does not
+        # contain (e.g. an externally truncated or rotated log), so a
+        # missing receipt could still suppress redelivery. A receipt not
+        # confirmed by the full revalidation must not count as delivered.
+        self._receipts.clear()
+        self._receipts.update(loaded)
 
     def _stderr_message(self, event: AlertEvent) -> str:
         return (
@@ -178,8 +216,10 @@ class TextAlertDelivery:
         Any write or flush failure rolls the log back to its pre-commit size
         before closing, so no partial receipt is ever left persisted. On
         success the staged handle is closed exactly once, completing the
-        commit boundary; a failed close means the receipt was not durably
-        committed and the exception propagates so the firing stays retryable.
+        commit boundary; a close error still propagates so the firing stays
+        retryable, but after a successful fsync it does not roll the record
+        back: a valid durable receipt may remain, and the error marks the
+        log for a fully revalidated recovery load on the next attempt.
         """
 
         # O_APPEND positions the fd at 0 until the first write on some
@@ -187,31 +227,70 @@ class TextAlertDelivery:
         # size; otherwise a failure could truncate prior receipts.
         committed_at = os.fstat(log_file.fileno()).st_size
         try:
-            log_file.write(line + "\n")
+            # A short write here would flush, fsync and commit a truncated
+            # receipt line as a delivered receipt, so it must be treated as
+            # a commit failure (aborting delivery before flush) exactly like
+            # the length-checked stderr write in _deliver_stderr.
+            if log_file.write(line + "\n") != len(line) + 1:
+                raise OSError("short write to alert receipt log")
             log_file.flush()
+            # Durability is part of the commit: a receipt whose fsync fails
+            # has NOT been delivered. Roll the appended line back below so a
+            # fresh process never observes the failed attempt as a
+            # persisted, delivered receipt.
+            os.fsync(log_file.fileno())
         except BaseException:
+            # Roll back at the file-descriptor level. Truncating (or closing)
+            # the buffered text handle would first re-flush its buffer: a
+            # failed append can leave the partial line buffered, and a
+            # swallowed re-flush would let close() write those bytes back
+            # after the truncation, re-creating exactly the malformed JSONL
+            # tail a restart retry cannot recover from. Duplicate the fd
+            # first, let close() flush whatever it will, then force the file
+            # back to its pre-commit size so only bytes from the current
+            # incomplete append are discarded and prior receipts survive.
             try:
-                log_file.truncate(committed_at)
+                rollback_fd = os.dup(log_file.fileno())
             except (OSError, ValueError):
-                pass
+                rollback_fd = None
             try:
                 log_file.close()
             except (OSError, ValueError):
                 pass
+            if rollback_fd is not None:
+                try:
+                    os.ftruncate(rollback_fd, committed_at)
+                    os.fsync(rollback_fd)
+                except OSError:
+                    pass
+                finally:
+                    try:
+                        os.close(rollback_fd)
+                    except OSError:
+                        pass
             raise
         # Stage 4 of the commit boundary: only a successful close completes
-        # the receipt commit. Surface a close failure instead of swallowing
-        # it so in-memory delivery state is never advanced for an
-        # incompletely persisted receipt.
-        log_file.close()
+        # the receipt commit handshake. Surface a close failure instead of
+        # swallowing it so in-memory delivery state is never advanced, but a
+        # close error after a successful fsync does not roll the durable
+        # record back: mark the log for a revalidating recovery load so a
+        # retry recognises the durable receipt instead of duplicating it.
+        try:
+            log_file.close()
+        except BaseException:
+            self._durable_unacknowledged = True
+            raise
 
     def _discard_empty_staged_log(self, log_file: TextIO) -> None:
         """Abort a staged delivery whose stderr step failed.
 
         The staged log received no receipt, so closing it leaves an empty
         file; an empty staged log is removed so no stray artifact survives
-        a retryable failure. The original delivery exception is never
-        masked by cleanup, and in-memory delivery state is untouched.
+        a retryable failure. A receipt-append failure may have closed the
+        handle during rollback, in which case the staged path is stat'ed
+        directly so the rolled-back empty log is still removed. The original
+        delivery exception is never masked by cleanup, and in-memory
+        delivery state is untouched.
         """
 
         try:
@@ -222,15 +301,44 @@ class TextAlertDelivery:
             log_file.close()
         except (OSError, ValueError):
             pass
-        if empty and self._receipt_path is not None:
-            try:
-                self._receipt_path.unlink()
-            except OSError:
-                pass
+        if self._receipt_path is not None:
+            if empty:
+                try:
+                    self._receipt_path.unlink()
+                except OSError:
+                    pass
+            else:
+                # Handle already closed by the rollback: fall back to stat.
+                try:
+                    if self._receipt_path.stat().st_size == 0:
+                        self._receipt_path.unlink()
+                except OSError:
+                    pass
 
     def __call__(self, event: AlertEvent) -> bool:
         receipt = asdict(event)
         alert_id = receipt["alert_id"]
+        # Recovery for the close-failure window: a prior attempt whose fsync
+        # succeeded but whose close raised may have left this receipt
+        # durably appended while in-memory state stayed unadvanced. Reload
+        # and revalidate the entire receipt log (terminal newline, JSON/
+        # object/required-field, alert-id and duplicate-conflict checks)
+        # before trusting any parsed prefix of it, then deduplicate on
+        # _receipt_identity semantics. A malformed, incomplete or
+        # conflicting log raises here rather than becoming a success, so
+        # repeated retries stay fail-closed; a valid durable receipt is
+        # recovered without re-emitting stderr or appending a duplicate.
+        # This pending recovery must run before any cached-event fast path:
+        # otherwise an alert id already present in _receipts would return
+        # from the cached dedup check without the log ever being
+        # revalidated, and the marker would stay set forever.
+        if self._durable_unacknowledged and self._receipt_path is not None:
+            # Clear the recovery marker only after the revalidating reload
+            # succeeds: a malformed or conflicting log raises here and keeps
+            # the marker set, so the next retry revalidates the whole log
+            # again instead of blindly appending after it (fail-closed).
+            self._load_existing_receipts()
+            self._durable_unacknowledged = False
         existing = self._receipts.get(alert_id)
         if existing is not None:
             if _receipt_identity(existing) != _receipt_identity(receipt):
@@ -270,3 +378,8 @@ class TextAlertDelivery:
 
     def reset(self) -> None:
         self._receipts.clear()
+        # Forget the pending recovery marker too: keeping it would force a
+        # revalidating reload on the next call that repopulates _receipts
+        # from the log, so reset() would never actually reset delivery
+        # deduplication state.
+        self._durable_unacknowledged = False

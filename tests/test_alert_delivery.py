@@ -1,12 +1,21 @@
 import io
 import json
 import pathlib
+import re
 from dataclasses import asdict, replace
 
 import pytest
 
 from monitor.alerts import AlertManager, AlertRule, TextAlertDelivery
 from monitor.storage import AlertEvent
+
+
+def event():
+    return AlertEvent(7, "urgent", 70, "warning", "fingerprint", "https://example.test/a\nspoof", "Story\nspoof", "hn", 80, 123.0, False)
+
+
+def _wrapped_event(alert_id, title="Story"):
+    return replace(event(), alert_id=alert_id, title=title)
 
 
 def test_callbacks_threshold_dedup_reset_and_removal():
@@ -62,10 +71,6 @@ def test_invalid_batches_fail_before_callbacks_and_duplicate_names_rejected():
             AlertRule("bad", threshold, lambda *args: None)
 
 
-def event():
-    return AlertEvent(7, "urgent", 70, "warning", "fingerprint", "https://example.test/a\nspoof", "Story\nspoof", "hn", 80, 123.0, False)
-
-
 def test_text_delivery_appends_and_emits_stable_single_line(tmp_path, capsys):
     path = tmp_path / "alerts.log"
     delivery = TextAlertDelivery(path)
@@ -105,9 +110,18 @@ def test_log_validation_conflicts_and_stream_retry(tmp_path):
         TextAlertDelivery(path)
     path.write_text(json.dumps(asdict(event())) + "\n")
     sink = TextAlertDelivery(path, stream=io.StringIO())
-    with pytest.raises(ValueError, match="conflicting"):
-        sink(replace(event(), title="different firing"))
+    conflicting = replace(event(), title="different firing")
+    baseline = path.read_bytes()
+    stderr_baseline = sink.stream.getvalue()
+    for _ in range(2):
+        with pytest.raises(ValueError, match=r"^conflicting receipt for alert id 7$"):
+            sink(conflicting)
+        assert sink._durable_unacknowledged is False
+        assert path.read_bytes() == baseline
+        assert sink.stream.getvalue() == stderr_baseline
     assert sink(replace(event(), resolved=True)) is False
+    assert path.read_bytes() == baseline
+    assert sink.stream.getvalue() == stderr_baseline
 
     class BrokenStream(io.StringIO):
         def write(self, value):
@@ -123,90 +137,45 @@ def test_log_validation_conflicts_and_stream_retry(tmp_path):
     assert "id=7" in sink.stream.getvalue()
 
 
-def test_production_delivery_sequence_is_open_stderr_append_close_then_state(
-    tmp_path, monkeypatch
-):
-    """Receipt-log open -> stderr write+flush -> append+flush+close -> state update."""
-
-    events = []
+def test_close_failure_recovery_revalidates_full_log_and_refuses(tmp_path, monkeypatch):
+    path = tmp_path / "alerts.jsonl"
+    sink = TextAlertDelivery(path, stream=io.StringIO())
     real_open = pathlib.Path.open
-    delivery_holder = {}
 
-    class RecordingReceiptFile:
-        """Real append-mode file with ordered-event recording (fileno works)."""
+    class CloseFails:
+        def __init__(self, handle):
+            self._handle = handle
 
-        def __init__(self, inner):
-            self._inner = inner
-
-        def write(self, text):
-            events.append("receipt-append")
-            return self._inner.write(text)
-
-        def flush(self):
-            events.append("receipt-flush")
-            return self._inner.flush()
+        def __getattr__(self, name):
+            return getattr(self._handle, name)
 
         def close(self):
-            # In-memory delivery state must still be unadvanced at close time.
-            assert delivery_holder["delivery"]._receipts == {}
-            events.append("receipt-close")
-            return self._inner.close()
+            raise OSError("simulated staged-log close failure")
 
-        def fileno(self):
-            return self._inner.fileno()
+    def open_with_failing_close(file, mode="r", **kwargs):
+        return CloseFails(real_open(file, mode, **kwargs))
 
-        def truncate(self, *args):
-            return self._inner.truncate(*args)
+    monkeypatch.setattr(pathlib.Path, "open", open_with_failing_close)
+    with pytest.raises(OSError, match="close failure"):
+        sink(event())
+    monkeypatch.undo()
+    assert sink._durable_unacknowledged is True
 
-    def fake_open(self, mode="r", *args, **kwargs):
-        assert mode == "a"
-        events.append("receipt-open")
-        return RecordingReceiptFile(real_open(self, mode, *args, **kwargs))
+    valid_line = json.dumps(asdict(event()), ensure_ascii=False, sort_keys=True)
+    conflicting = replace(event(), title="conflicting firing")
+    conflicting_line = json.dumps(asdict(conflicting), ensure_ascii=False, sort_keys=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(conflicting_line + "\n")
 
-    class OrderedStderr(io.StringIO):
-        def write(self, text):
-            events.append("stderr-write")
-            return super().write(text)
-
-        def flush(self):
-            events.append("stderr-flush")
-            return super().flush()
-
-    monkeypatch.setattr(pathlib.Path, "open", fake_open)
-    receipt_path = tmp_path / "alerts.jsonl"
-    delivery = TextAlertDelivery(receipt_path, stream=OrderedStderr())
-    delivery_holder["delivery"] = delivery
-
-    assert delivery(event()) is True
-    assert events == [
-        "receipt-open",
-        "stderr-write",
-        "stderr-flush",
-        "receipt-append",
-        "receipt-flush",
-        "receipt-close",
-    ]
-    # The in-memory state update is the final step, after the log is closed.
-    assert delivery._receipts and delivery(event()) is False
-
-    # A stderr write failure inside the open boundary leaves no receipt behind.
-    class BrokenWrite(io.StringIO):
-        def write(self, text):
-            events.append("stderr-write")
-            raise OSError("stderr stream gone")
-
-    events.clear()
-    broken = TextAlertDelivery(tmp_path / "broken.jsonl", stream=BrokenWrite())
-    delivery_holder["delivery"] = broken
-    with pytest.raises(OSError, match="stderr stream gone"):
-        broken(event())
-    assert events == ["receipt-open", "stderr-write", "receipt-close"]
-    assert broken._receipts == {}
-    # Restore the real Path.open before reading the receipt log below:
-    # open("a") creates the staged file, and Path.read_text internally
-    # calls open(mode="r"), which would trip the recording fake's
-    # append-only mode assertion.
-    monkeypatch.setattr(pathlib.Path, "open", real_open)
-    assert not (tmp_path / "broken.jsonl").exists() or (
-        tmp_path / "broken.jsonl"
-    ).read_text(encoding="utf-8") == ""
+    baseline = path.read_bytes()
+    stderr_baseline = sink.stream.getvalue()
+    for _ in range(2):
+        with pytest.raises(
+            ValueError, match=re.escape(f"conflicting receipts for alert id 7 in {path}")
+        ):
+            sink(event())
+        assert sink._durable_unacknowledged is True
+        assert path.read_bytes() == baseline
+        assert sink.stream.getvalue() == stderr_baseline
+        assert json.loads(baseline.splitlines()[0]) == asdict(event())
+        assert json.loads(baseline.splitlines()[1]) == asdict(conflicting)
